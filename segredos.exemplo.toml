@@ -1,0 +1,13 @@
+# Copie este arquivo para segredos.toml (ele NÃO vai para o git).
+
+# Canal do ntfy (app ntfy no celular -> "+" -> digite este nome).
+# Use um nome difícil de adivinhar: quem souber o nome lê os avisos.
+ntfy_topico = "precos-troque-este-nome"
+# ntfy_servidor = "https://ntfy.sh"
+
+# CEP (reservado para cálculo de frete em versões futuras)
+# cep = "00000-000"
+
+# WhatsApp via CallMeBot (opcional): https://www.callmebot.com/blog/free-api-whatsapp-messages/
+# callmebot_fone = "+5511999999999"
+# callmebot_apikey = "123456"
