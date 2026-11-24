@@ -554,7 +554,7 @@ class Api:
         if minutos <= 0:
             self._rodar_script("desinstalar_tarefa.ps1")
         else:
-            self._rodar_script("instalar_tarefa.ps1", "-Minutos", str(max(30, minutos)))
+            self._rodar_script("instalar_tarefa.ps1", "-Minutos", str(min(max(1, minutos), 1440)))
         return self.agendamento()
 
     def abrir(self, link: str) -> None:
@@ -751,7 +751,7 @@ input,textarea,select{font:inherit;color:var(--texto);background:var(--cartao);b
 input:focus,textarea:focus{border-color:var(--acento);box-shadow:0 0 0 3px var(--bom-bg)}
 textarea{resize:vertical;min-height:64px}
 .linha{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
-.seg{display:flex;background:var(--fundo);border:1px solid var(--borda);border-radius:10px;padding:3px;gap:3px}
+.seg{display:flex;flex-wrap:wrap;background:var(--fundo);border:1px solid var(--borda);border-radius:10px;padding:3px;gap:3px}
 .seg button{flex:1;border:0;background:transparent;color:var(--suave);padding:7px 10px;font-size:13px;font-weight:600}
 .seg button[aria-pressed="true"]{background:var(--cartao);color:var(--texto);box-shadow:0 0 0 1px var(--borda)}
 .check{display:flex;align-items:center;gap:8px;font-size:13px}
@@ -937,9 +937,11 @@ document.addEventListener('click', async e => {
   const sb = e.target.closest('.seg button');
   if (sb) { e.preventDefault(); seg(sb.parentElement.dataset.grupo, sb.dataset.v);
     if (sb.parentElement.dataset.grupo === 'pesquisa') atualizarIA();
-    if (sb.parentElement.dataset.grupo === 'intervalo' && api()) {
-      status('Atualizando o agendamento do Windows…'); AG = await api().mudar_intervalo(+sb.dataset.v);
-      $('#agenda').textContent = AG.texto; $('#agenda-texto').textContent = AG.texto; status('Agendamento atualizado.'); }
+    if (sb.parentElement.dataset.grupo === 'intervalo') {
+      const pers = sb.dataset.v === 'personalizado';
+      $('#bloco-personalizado').classList.toggle('oculto', !pers);
+      if (pers) { $('#intervalo-min').focus(); }
+      else if (api()) await aplicarIntervalo(+sb.dataset.v); }
   }
   const ed = e.target.closest('[data-editar]'); if (ed) abrirForm(+ed.dataset.editar);
   const ex = e.target.closest('[data-excluir]');
@@ -972,6 +974,7 @@ document.addEventListener('click', async e => {
     if (!r.ok) { status(r.erro); return; }
     abertoApi = false; testes.api = {tipo: 'testando', mensagem: 'Conferindo a chave…'}; renderIA();
     testes.api = await api().conectar_ia('api'); IA = await api().status_ia(); renderIA(); }
+  if (e.target.closest('#aplicar-intervalo') && api()) await aplicarIntervalo(+$('#intervalo-min').value);
   if (e.target.closest('#verificar') && api()) { status(await api().verificar_agora()); acompanhar(); }
   if (e.target.closest('#testar') && api()) status(await api().testar_aviso());
 });
@@ -980,11 +983,21 @@ $('#form-geral').addEventListener('submit', salvarGeral);
 marcarTema();
 
 let AG = null;
+async function aplicarIntervalo(min){
+  if (min !== 0 && !(min >= 1 && min <= 1440)) { status('Use de 1 a 1440 minutos.'); return; }
+  $('#aviso-intervalo').classList.toggle('oculto', !(min > 0 && min < 15));
+  status('Atualizando o agendamento do Windows…'); AG = await api().mudar_intervalo(min);
+  $('#agenda').textContent = AG.texto; $('#agenda-texto').textContent = AG.texto; status('Agendamento atualizado.');
+}
 async function mostrarAgenda(){
   AG = api() ? await api().agendamento() : (window.AG_DEMO || null);
   if (!AG) return;
   $('#agenda').textContent = AG.texto; $('#agenda-texto').textContent = AG.texto;
-  seg('intervalo', AG.ativo ? String(AG.intervalo_min) : '0');
+  const fixos = ['5', '10', '30', '60'], v = AG.ativo ? String(AG.intervalo_min) : '0';
+  seg('intervalo', !AG.ativo ? '0' : (fixos.includes(v) ? v : 'personalizado'));
+  $('#bloco-personalizado').classList.toggle('oculto', !(AG.ativo && !fixos.includes(v)));
+  if (AG.ativo && !fixos.includes(v)) $('#intervalo-min').value = v;
+  $('#aviso-intervalo').classList.toggle('oculto', !(AG.ativo && AG.intervalo_min < 15));
 }
 let ultimo = null, IA = null, testes = {}, abertoApi = false;
 const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>';
@@ -1146,8 +1159,14 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
         '<section class="cartao secao" style="margin-top:14px"><h3>Verificação automática</h3>'
         '<p class="dica">O monitor busca preços novos sozinho, mesmo com este app fechado. Só precisa do PC ligado.</p>'
         '<div class="campo"><span class="rotulo">Verificar a cada</span>'
-        + _seg("intervalo", (("30", "30 min"), ("60", "1 hora"), ("180", "3 horas"), ("0", "Desligada")))
-        + '<small id="agenda-texto"></small></div></section>'
+        + _seg("intervalo", (("5", "5 min"), ("10", "10 min"), ("30", "30 min"), ("60", "1 hora"),
+                             ("personalizado", "Personalizado"), ("0", "Desligada")))
+        + '<div id="bloco-personalizado" class="junto oculto"><input id="intervalo-min" type="number" min="1" max="1440" '
+          'placeholder="Minutos (1 a 1440)"><button type="button" class="btn" id="aplicar-intervalo">Aplicar</button></div>'
+          '<p id="aviso-intervalo" class="cx-status limite oculto">Intervalos menores que 15 minutos: cada verificação leva '
+          'de 1 a 2 minutos, então elas emendam umas nas outras; o Zoom pode bloquear temporariamente quem consulta '
+          'demais; e, com IA ligada, gasta mais do seu plano.</p>'
+          '<small id="agenda-texto"></small></div></section>'
         '<section class="cartao secao" style="margin-top:14px">'
         '<div class="ia-cab"><span class="ia-icone"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'
         '<path d="m4 17 6-6-6-6M12 19h8"/></svg></span><h3>Pesquisa com IA</h3>'

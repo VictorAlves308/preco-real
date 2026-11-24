@@ -1,8 +1,8 @@
-# Agenda o monitor de preços no Windows: roda ao entrar no Windows e a cada N minutos,
+﻿# Agenda o monitor de preços no Windows: roda ao entrar no Windows e a cada N minutos,
 # com prioridade baixa. Uso:
 #   powershell -ExecutionPolicy Bypass -File instalar_tarefa.ps1              (a cada 180 min)
 #   powershell -ExecutionPolicy Bypass -File instalar_tarefa.ps1 -Minutos 30  (ex.: Black Friday)
-param([ValidateRange(30, 1440)][int]$Minutos = 180)
+param([ValidateRange(1, 1440)][int]$Minutos = 180)
 $ErrorActionPreference = "Stop"
 $raiz = Split-Path -Parent $MyInvocation.MyCommand.Path
 $pyw = Join-Path $raiz ".venv\Scripts\pythonw.exe"

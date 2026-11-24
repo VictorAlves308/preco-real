@@ -372,3 +372,20 @@ def test_mudar_intervalo(tmp_path):
 
 def test_html_intervalo():
     assert 'data-grupo="intervalo"' in html_cadastro()
+
+
+def test_intervalo_personalizado_ate_1_minuto(tmp_path):
+    api = _api_ia(tmp_path, lambda n: None)
+    chamadas = []
+    api._rodar_script = lambda nome, *args: chamadas.append((nome, args))
+    api._ler_tarefa = lambda: {"existe": False}
+    api.mudar_intervalo(1)
+    api.mudar_intervalo(7)
+    assert chamadas == [("instalar_tarefa.ps1", ("-Minutos", "1")), ("instalar_tarefa.ps1", ("-Minutos", "7"))]
+
+
+def test_html_intervalos():
+    html = html_cadastro()
+    for v in ('data-v="5"', 'data-v="10"', 'data-v="personalizado"', 'id="intervalo-min"'):
+        assert v in html
+    assert "bloquear" in html  # aviso sobre intervalos curtos
