@@ -7,6 +7,7 @@ from html import escape
 from pathlib import Path
 
 TEMAS = ("sistema", "claro", "escuro")
+MUITO_ACIMA = 1.10  # 10% ou mais acima da mediana: trecho vermelho
 PREF = Path(__file__).resolve().parent.parent / "dados" / "preferencias.json"
 
 _CLARO = """
@@ -14,14 +15,14 @@ _CLARO = """
   --suave:#6B6862; --acento:#1F7A5C; --acento-hover:#18674D; --acento-texto:#FFFFFF;
   --real-bg:#E3F1EA; --real-tx:#1F6B4F; --sem-bg:#F6EDD9; --sem-tx:#7A5512;
   --normal-bg:#EEEDEA; --normal-tx:#4A4843; --foto:#FFFFFF;
-  --bom:#1E9D62; --alto:#E07B12; --mediana:#9A968E; --seg-ativo:#FFFFFF;
+  --bom:#1E9D62; --alto:#E07B12; --muito-alto:#D7372F; --mediana:#9A968E; --seg-ativo:#FFFFFF;
 """
 _ESCURO = """
   --fundo:#161615; --cartao:#1F1F1D; --borda:#2E2D2A; --borda-forte:#46443F; --texto:#EDECE8;
   --suave:#9C9A94; --acento:#4FB38E; --acento-hover:#62C39F; --acento-texto:#0B1F17;
   --real-bg:#173327; --real-tx:#8FD6B5; --sem-bg:#352A12; --sem-tx:#E9C77A;
   --normal-bg:#2A2927; --normal-tx:#C9C6BF; --foto:#FFFFFF;
-  --bom:#45C98A; --alto:#F5A04A; --mediana:#7C7A74; --seg-ativo:#2E2D2A;
+  --bom:#45C98A; --alto:#F5A04A; --muito-alto:#F2635B; --mediana:#7C7A74; --seg-ativo:#2E2D2A;
 """
 
 CSS = (
@@ -74,6 +75,7 @@ main::-webkit-scrollbar-thumb:hover{background:var(--suave)}
 .ponto{width:9px;height:9px;border-radius:50%;display:inline-block}
 .ponto.bom{background:var(--bom)}
 .ponto.alto{background:var(--alto)}
+.ponto.muito{background:var(--muito-alto)}
 .ponto.min{background:var(--cartao);border:2px solid var(--bom)}
 .traco{width:14px;border-top:2px dashed var(--mediana);display:inline-block}
 .tags{color:var(--suave);font-size:12.5px;margin-top:10px}
@@ -123,7 +125,7 @@ def salvar_tema(arquivo: Path, tema: str) -> None:
 def sparkline(valores: list[float], largura: int = 460, altura: int = 64, uid: str = "g") -> str:
     """Gráfico do histórico.
 
-    Linha verde quando o preço está abaixo da mediana (barato) e laranja quando está acima (caro);
+    Linha verde abaixo da mediana (barato), laranja acima (caro) e vermelha 10% ou mais acima (muito caro);
     mediana tracejada; anel verde no menor preço; ponto grande no preço de hoje.
     """
     if not valores:
@@ -143,19 +145,24 @@ def sparkline(valores: list[float], largura: int = 460, altura: int = 64, uid: s
     ordenados = sorted(valores)
     med = ordenados[len(ordenados) // 2]
     ym = y(med)
+    yr = max(y(med * MUITO_ACIMA), 0.0)
     imin = valores.index(lo)
     hoje = valores[-1]
-    cor_hoje = "var(--bom)" if hoje <= med else "var(--alto)"
+    cor_hoje = ("var(--bom)" if hoje <= med else "var(--alto)" if hoje < med * MUITO_ACIMA
+                else "var(--muito-alto)")
     return (
         f'<svg viewBox="0 0 {largura} {altura}" aria-hidden="true">'
         f'<defs><clipPath id="{uid}a"><rect x="0" y="{ym:.1f}" width="{largura}" height="{altura}"/></clipPath>'
-        f'<clipPath id="{uid}b"><rect x="0" y="0" width="{largura}" height="{ym:.1f}"/></clipPath></defs>'
+        f'<clipPath id="{uid}b"><rect x="0" y="{yr:.1f}" width="{largura}" height="{max(ym - yr, 0):.1f}"/></clipPath>'
+        f'<clipPath id="{uid}c"><rect x="-10" y="-10" width="{largura + 20}" height="{yr + 10:.1f}"/></clipPath></defs>'
         f'<line x1="0" x2="{largura}" y1="{ym:.1f}" y2="{ym:.1f}" stroke="var(--mediana)" '
         'stroke-width="1.5" stroke-dasharray="4 4"/>'
         f'<polyline points="{pts}" fill="none" stroke="var(--bom)" stroke-width="2.5" '
         f'stroke-linejoin="round" stroke-linecap="round" clip-path="url(#{uid}a)"/>'
         f'<polyline points="{pts}" fill="none" stroke="var(--alto)" stroke-width="2.5" '
         f'stroke-linejoin="round" stroke-linecap="round" clip-path="url(#{uid}b)"/>'
+        f'<polyline points="{pts}" fill="none" stroke="var(--muito-alto)" stroke-width="2.5" '
+        f'stroke-linejoin="round" stroke-linecap="round" clip-path="url(#{uid}c)"/>'
         f'<circle class="m-min" cx="{x(imin):.1f}" cy="{y(lo):.1f}" r="4.5" fill="var(--cartao)" '
         'stroke="var(--bom)" stroke-width="2.5"/>'
         f'<circle class="m-hoje" cx="{x(len(valores) - 1):.1f}" cy="{y(hoje):.1f}" r="6" '
@@ -178,11 +185,12 @@ def _cartao(d: dict, idx: int) -> str:
         vals = list(d["historico"]) + ([d["vista_num"]] if d.get("vista_num") else [])
         ordenados = sorted(vals)
         med = ordenados[len(ordenados) // 2]
-        zona = "bom" if vals[-1] <= med else "alto"
+        zona = "bom" if vals[-1] <= med else "alto" if vals[-1] < med * MUITO_ACIMA else "muito"
+        resumo = {"bom": "abaixo do normal", "alto": "acima do normal", "muito": "muito acima do normal"}[zona]
         hist = (
             '<figure class="hist">'
             '<div class="hist-titulo"><span>Preço à vista · últimos 90 dias</span>'
-            f'<span>{"abaixo do normal" if zona == "bom" else "acima do normal"}</span></div>'
+            f'<span>{resumo}</span></div>'
             f"{sparkline(vals, uid=f'g{idx}')}"
             '<figcaption class="legenda">'
             f'<span><i class="ponto {zona}"></i>Hoje <b>{e(_moeda(vals[-1]))}</b></span>'

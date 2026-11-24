@@ -32,7 +32,7 @@ def test_sparkline():
 
 def test_sparkline_colorido_com_marcadores():
     svg = sparkline([900.0, 700.0, 1000.0, 800.0], 400, 60)
-    assert svg.count("<clipPath") == 2          # linha verde abaixo da mediana, laranja acima
+    assert svg.count("<clipPath") == 3          # verde abaixo da mediana, laranja acima, vermelho muito acima
     assert 'class="m-min"' in svg and 'class="m-hoje"' in svg
 
 
@@ -56,3 +56,11 @@ def test_preferencia_de_tema(tmp_path):
     assert ler_tema(arq, "claro") == "escuro"
     salvar_tema(arq, "invalido")
     assert ler_tema(arq, "claro") == "escuro"
+
+
+def test_trecho_muito_alto_vermelho():
+    svg = sparkline([1000.0] * 10 + [1300.0], 400, 60)
+    assert "var(--muito-alto)" in svg
+    assert 'fill="var(--muito-alto)"' in svg  # hoje muito acima: ponto vermelho
+    html = html_janela("t", [dict(ITEM, historico=[1000.0] * 10, vista_num=1300.0)], "00:00")
+    assert "muito acima do normal" in html and 'class="ponto muito"' in html
