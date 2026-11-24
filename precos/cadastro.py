@@ -310,7 +310,7 @@ class Api:
     def entrar_ia(self, id_: str) -> str:
         if id_ in self._CLI:
             self._terminal(self._CLI[id_]["entrar"])
-            return "Faça o login na janela que abriu e depois clique em Testar."
+            return "Faça o login na janela que abriu e depois clique em Conectar."
         return ""
 
     def _faixa_ia(self) -> str:
@@ -694,7 +694,7 @@ document.addEventListener('click', async e => {
     if (id === 'api') { abertoApi = true; IA.selecionado = 'api'; renderIA(); }
     else { IA = await api().selecionar_ia(id, null); renderIA(); status(id ? 'IA selecionada.' : 'Pesquisa com IA desligada.'); } }
   const ti = e.target.closest('[data-testar-ia]');
-  if (ti && api()) { const id = ti.dataset.testarIa; testes[id] = {tipo: 'testando', mensagem: 'Testando… pode levar alguns segundos.'};
+  if (ti && api()) { const id = ti.dataset.testarIa; testes[id] = {tipo: 'testando', mensagem: 'Conectando… pode levar alguns segundos.'};
     renderIA(); testes[id] = await api().testar_ia(id); renderIA(); }
   const ins = e.target.closest('[data-instalar]'); if (ins && api()) status(await api().instalar_ia(ins.dataset.instalar));
   const ent = e.target.closest('[data-entrar]'); if (ent && api()) status(await api().entrar_ia(ent.dataset.entrar));
@@ -703,7 +703,7 @@ document.addEventListener('click', async e => {
   if (e.target.closest('[data-salvar-api]') && api()) { const prov = segValor('provedor') || 'claude';
     const r = await api().salvar_geral({provedor: prov, chave: $('#g-chave').value, limite_gasto_mensal: $('#g-limite').value});
     if (!r.ok) { status(r.erro); return; }
-    IA = await api().selecionar_ia('api', prov); abertoApi = false; renderIA(); status('Chave salva. Clique em Testar para conferir.'); }
+    IA = await api().selecionar_ia('api', prov); abertoApi = false; renderIA(); status('Chave salva. Clique em Conectar para conferir.'); }
   if (e.target.closest('#verificar') && api()) { status(await api().verificar_agora()); acompanhar(); }
   if (e.target.closest('#testar') && api()) status(await api().testar_aviso());
 });
@@ -721,7 +721,7 @@ function rowIA(c){
   if (!c.instalado) acoes += `<button class="btn" data-instalar="${c.id}">Instalar</button>`;
   else if (c.tipo === 'api') acoes += `<button class="btn" data-configurar-api>${abertoApi ? 'Fechar' : 'Configurar'}</button>`;
   else if (t && t.tipo === 'login') acoes += `<button class="btn primario" data-entrar="${c.id}">Entrar</button>`;
-  if (c.instalado) acoes += `<button class="btn" data-testar-ia="${c.id}">Testar</button>`;
+  if (c.instalado) acoes += `<button class="btn" data-testar-ia="${c.id}">Conectar</button>`;
   if (t && t.tipo) extra += `<p class="cx-status ${esc(t.tipo)}">${esc(t.mensagem)}</p>`;
   if (!c.instalado) extra += `<p class="cx-dica">Ou cole no PowerShell:</p>
     <div class="codigo"><code>${esc(c.instalar)}</code><button class="btn" data-copiar="${esc(c.instalar)}">Copiar</button></div>`;
