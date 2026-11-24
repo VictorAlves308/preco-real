@@ -105,7 +105,7 @@ def test_pesquisador_registra_erro_e_avisa_limite_uma_vez_por_dia(tmp_path):
     item = Item(nome="X", pesquisa="economica", descricao="x")
     p = Pesquisador(cfg, e, {"economica": Quebra("limite")}, hoje=date(2026, 11, 24), notificar=avisos.append)
     assert p.filtrar(item, ["A"]) == {"A": (True, "")}  # sem IA, segue com as regras
-    st = json.loads(e.cache_ler("ia_status"))
+    st = json.loads(e.cache_ler("ia_status:claude_code"))
     assert st["tipo"] == "limite" and "limite de uso" in st["mensagem"]
     p.filtrar(item, ["B"])
     assert len(avisos) == 1
@@ -119,10 +119,10 @@ def test_pesquisador_limpa_erro_quando_volta(tmp_path):
             return Resposta('[{"i": 1, "ok": true, "motivo": ""}]', 0.0)
 
     e = Estado(tmp_path / "e.db")
-    e.cache_gravar("ia_status", json.dumps({"tipo": "limite", "mensagem": "m"}))
+    e.cache_gravar("ia_status:claude_code", json.dumps({"tipo": "limite", "mensagem": "m"}))
     cfg = Config(itens=[], ia=ConfigIA(provedor="claude_code"))
     Pesquisador(cfg, e, {"economica": Ok()}).filtrar(Item(nome="X", pesquisa="economica"), ["A"])
-    assert json.loads(e.cache_ler("ia_status"))["tipo"] == "ok"
+    assert json.loads(e.cache_ler("ia_status:claude_code"))["tipo"] == "ok"
 
 
 def test_modelo_por_provedor(tmp_path, monkeypatch):
@@ -135,3 +135,49 @@ def test_modelo_por_provedor(tmp_path, monkeypatch):
     monkeypatch.setattr(ia.shutil, "which", lambda n: f"C:/bin/{n}.cmd")
     assert criar(cfg.ia, "economica", {}).modelo == "sonnet"
     assert criar(cfg.ia, "completa", {}).modelo is None  # sem escolha: padrão do programa
+
+
+class Conta:
+    def __init__(self, resposta="[]", erro=None):
+        self.resposta, self.erro, self.chamadas = resposta, erro, 0
+
+    def gerar(self, *a, **k):
+        from precos.ia import Resposta
+        self.chamadas += 1
+        if self.erro:
+            raise ErroIA(self.erro, "Claude Code", "x")
+        return Resposta(self.resposta, 0.0)
+
+
+def test_reserva_quando_o_plano_acaba(tmp_path):
+    avisos = []
+    cfg = Config(itens=[], ia=ConfigIA(conexoes=["claude_code", "codex"]))
+    e = Estado(tmp_path / "e.db")
+    claude = Conta(erro="limite")
+    codex = Conta(resposta='[{"i": 1, "ok": false, "motivo": "ruim"}]')
+    p = Pesquisador(cfg, e, {"economica": [("claude_code", claude), ("codex", codex)]},
+                    hoje=date(2026, 11, 24), notificar=avisos.append)
+    item = Item(nome="X", pesquisa="economica", descricao="x")
+    assert p.filtrar(item, ["A"]) == {"A": (False, "ruim")}  # respondeu pelo Codex
+    assert json.loads(e.cache_ler("ia_status:claude_code"))["tipo"] == "limite"
+    assert json.loads(e.cache_ler("ia_status:codex"))["tipo"] == "ok"
+    assert len(avisos) == 1 and "Usando Codex enquanto isso" in avisos[0]
+    p.filtrar(item, ["B"])
+    assert claude.chamadas == 1  # na mesma rodada não insiste no que já estourou
+    assert codex.chamadas == 2
+
+
+def test_todas_falham_segue_com_regras(tmp_path):
+    cfg = Config(itens=[], ia=ConfigIA(conexoes=["claude_code", "codex"]))
+    p = Pesquisador(cfg, Estado(tmp_path / "e.db"),
+                    {"economica": [("claude_code", Conta(erro="limite")), ("codex", Conta(erro="login"))]})
+    assert p.filtrar(Item(nome="X", pesquisa="economica"), ["A"]) == {"A": (True, "")}
+
+
+def test_config_ligadas_compativel(tmp_path):
+    from precos.config import carregar
+    c = tmp_path / "c.toml"
+    c.write_text('[ia]\nprovedor = "codex"\n', encoding="utf-8")
+    assert carregar(c, tmp_path / "s").ia.ligadas() == ["codex"]
+    c.write_text('[ia]\nconexoes = ["codex", "claude_code"]\n', encoding="utf-8")
+    assert carregar(c, tmp_path / "s").ia.ligadas() == ["codex", "claude_code"]

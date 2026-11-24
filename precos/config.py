@@ -42,6 +42,14 @@ class ConfigIA:
     preco_entrada: float | None = None  # US$ por 1 milhão de tokens (modelos fora da tabela)
     preco_saida: float | None = None
     modelos: dict = field(default_factory=dict)  # {provedor: {"economica": nome, "completa": nome}}
+    conexoes: list[str] = field(default_factory=list)  # IAs ligadas, em ordem (a 1ª é a principal)
+
+    def ligadas(self) -> list[str]:
+        """IAs ligadas em ordem de prioridade. Configurações antigas tinham só 'provedor'."""
+        validas = ("claude_code", "codex", "claude", "openai")
+        if self.conexoes:
+            return [c for c in self.conexoes if c in validas]
+        return [self.provedor] if self.provedor in validas else []
 
 
 @dataclass

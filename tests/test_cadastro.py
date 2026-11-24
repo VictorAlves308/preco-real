@@ -170,7 +170,7 @@ def _api_ia(tmp_path, localizar, runner=None):
 def test_status_ia_lista_conexoes(tmp_path):
     api = _api_ia(tmp_path, lambda n: "C:/bin/codex.cmd" if n == "codex" else None)
     st = api.status_ia()
-    assert st["selecionado"] == "codex"
+    assert st["ligados"] == ["codex"]
     por_id = {c["id"]: c for c in st["conexoes"]}
     assert por_id["codex"]["instalado"] and "9.9" in por_id["codex"]["versao"]
     assert not por_id["claude_code"]["instalado"]
@@ -187,7 +187,7 @@ def test_testar_ia_ok_e_limite(tmp_path):
     resp["r"] = (1, _json.dumps({"is_error": True, "result": "Claude AI usage limit reached"}), "")
     r = api.testar_ia("claude_code")
     assert not r["ok"] and r["tipo"] == "limite"
-    assert api.status_ia()["status"]["tipo"] == "limite"
+    assert api.status_ia()["status"]["claude_code"]["tipo"] == "limite"
 
 
 def test_testar_ia_nao_instalado(tmp_path):
@@ -195,12 +195,18 @@ def test_testar_ia_nao_instalado(tmp_path):
     assert r == {"ok": False, "tipo": "nao_instalado", "mensagem": "Claude Code não está instalado neste PC."}
 
 
-def test_selecionar_ia(tmp_path):
-    api = _api_ia(tmp_path, lambda n: None)
-    api.selecionar_ia("claude_code")
-    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").ia.provedor == "claude_code"
-    api.selecionar_ia("")
-    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").ia.provedor == "nenhum"
+def test_ligar_varias_ias_em_ordem(tmp_path):
+    api = _api_ia(tmp_path, lambda n: None)  # config começa com provedor = "codex"
+    api.ligar_ia("claude_code", True)
+    cfg = carregar(tmp_path / "config.toml", tmp_path / "s.toml")
+    assert cfg.ia.ligadas() == ["codex", "claude_code"]  # ligar um não desliga o outro
+    api.priorizar_ia("claude_code")
+    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").ia.ligadas() == ["claude_code", "codex"]
+    assert api.status_ia()["ligados"] == ["claude_code", "codex"]
+    api.ligar_ia("codex", False)
+    api.ligar_ia("claude_code", False)
+    cfg = carregar(tmp_path / "config.toml", tmp_path / "s.toml")
+    assert cfg.ia.ligadas() == [] and cfg.ia.provedor == "nenhum"
 
 
 def test_salvar_geral_sem_provedor_nao_mexe_na_ia(tmp_path):
@@ -213,10 +219,22 @@ def test_faixa_de_erro_da_ia_nas_ofertas(tmp_path):
     import json as _json
     from precos.estado import Estado
     api = _api_ia(tmp_path, lambda n: None)
-    Estado(tmp_path / "e.db").cache_gravar("ia_status", _json.dumps(
+    Estado(tmp_path / "e.db").cache_gravar("ia_status:codex", _json.dumps(
         {"tipo": "limite", "mensagem": "Codex: o limite de uso do seu plano acabou.", "provedor": "codex"}))
     html = api.ofertas()["html"]
     assert 'class="faixa limite"' in html and "limite de uso do seu plano" in html and 'data-ir="config"' in html
+    assert "sigo só com as regras" in html  # nenhuma reserva ligada
+
+
+def test_faixa_mostra_reserva_em_uso(tmp_path):
+    import json as _json
+    from precos.estado import Estado
+    api = _api_ia(tmp_path, lambda n: None)
+    api.ligar_ia("claude_code", True)  # codex (1º) e claude_code (2º)
+    Estado(tmp_path / "e.db").cache_gravar("ia_status:codex", _json.dumps(
+        {"tipo": "limite", "mensagem": "Codex: o limite de uso do seu plano acabou.", "provedor": "codex"}))
+    html = api.ofertas()["html"]
+    assert "Usando Claude Code enquanto isso" in html
 
 
 def test_html_conexoes_ia():
@@ -293,7 +311,7 @@ def test_conectar_sem_login_abre_navegador(tmp_path):
     assert api.estado_login("codex")["logado"] is True
     r = api.conectar_ia("codex")
     assert r["ok"] and r["tipo"] == "ok" and "ChatGPT" in r["mensagem"]
-    assert api.status_ia()["selecionado"] == "codex"  # conectar liga a chave
+    assert api.status_ia()["ligados"] == ["codex"]  # conectar liga a chave
 
 
 def test_conectar_claude_mostra_plano(tmp_path):
@@ -308,7 +326,7 @@ def test_desconectar(tmp_path):
     api = _api_ia(tmp_path, lambda n: f"C:/bin/{n}.cmd", _runner_login(logado))
     api.conectar_ia("codex")
     st = api.desconectar_ia("codex")
-    assert logado["codex"] is False and st["selecionado"] == ""
+    assert logado["codex"] is False and st["ligados"] == []
 
 
 def test_para_toml_tabela_dentro_de_tabela():

@@ -38,9 +38,18 @@ class Pesquisador:
                  notificar=None):
         self.cfg = cfg
         self.estado = estado
-        self.provedores = provedores  # {"economica": prov|None, "completa": prov|None}
+        # {"economica": [(id, provedor), ...]} em ordem de prioridade (aceita um provedor solto também)
+        self.provedores = {n: self._lista(v) for n, v in provedores.items()}
+        self._pulados: set[str] = set()  # IAs que falharam nesta rodada: não insiste nelas
         self.mes = (hoje or date.today()).strftime("%Y-%m")
         self.notificar = notificar
+
+    def _lista(self, v):
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [x for x in v if x and x[1] is not None]
+        return [(self.cfg.ia.provedor, v)]
 
     # ---- orçamento e chamada ----
     def _orcamento_ok(self) -> bool:
@@ -57,30 +66,42 @@ class Pesquisador:
         return False
 
     def _chamar(self, nivel: str, prompt: str, web: bool = False) -> str | None:
-        prov = self.provedores.get(nivel)
-        if prov is None or not self._orcamento_ok():
+        """Tenta as IAs ligadas em ordem; se uma falhar (limite do plano, login, rede), usa a próxima."""
+        lista = [(pid, prov) for pid, prov in self.provedores.get(nivel, []) if pid not in self._pulados]
+        if not lista or not self._orcamento_ok():
             return None
-        try:
-            r = prov.gerar(SISTEMA, prompt, web=web)
-        except Exception as e:  # noqa: BLE001 - IA nunca derruba a rodada
-            erro = e if isinstance(e, ErroIA) else ErroIA(
-                classificar_erro(str(e)), NOMES.get(self.cfg.ia.provedor, "IA"), str(e))
-            log.warning("IA falhou (%s): %s", erro.tipo, erro.detalhe or erro.mensagem)
-            self._status(erro.tipo, erro.mensagem)
-            if erro.tipo in ("limite", "login") and self.notificar:
-                chave = f"ia_avisado:{erro.tipo}:{date.today().isoformat()}"
-                if not self.estado.cache_ler(chave):  # no máximo um aviso por dia
-                    self.estado.cache_gravar(chave, "1")
-                    self.notificar(erro.mensagem)
-            return None
-        self._status("ok", "")
-        self.estado.somar_gasto(self.mes, r.custo)
-        return r.texto
+        falhas: list[ErroIA] = []
+        for pid, prov in lista:
+            try:
+                r = prov.gerar(SISTEMA, prompt, web=web)
+            except Exception as e:  # noqa: BLE001 - IA nunca derruba a rodada
+                erro = e if isinstance(e, ErroIA) else ErroIA(classificar_erro(str(e)), NOMES.get(pid, "IA"), str(e))
+                log.warning("IA %s falhou (%s): %s", pid, erro.tipo, erro.detalhe or erro.mensagem)
+                self._status(pid, erro.tipo, erro.mensagem)
+                self._pulados.add(pid)
+                falhas.append(erro)
+                continue
+            self._status(pid, "ok", "")
+            self.estado.somar_gasto(self.mes, r.custo)
+            for f in falhas:
+                self._avisar(f, f"{f.mensagem} Usando {NOMES.get(pid, pid)} enquanto isso.")
+            return r.texto
+        for f in falhas:
+            self._avisar(f, f"{f.mensagem} Até lá sigo só com as regras." if f.tipo == "limite" else f.mensagem)
+        return None
 
-    def _status(self, tipo: str, mensagem: str) -> None:
-        """Última situação da IA, mostrada no app (faixa de aviso e Configurações)."""
-        self.estado.cache_gravar("ia_status", json.dumps(
-            {"tipo": tipo, "mensagem": mensagem, "provedor": self.cfg.ia.provedor,
+    def _avisar(self, erro: ErroIA, texto: str) -> None:
+        if erro.tipo not in ("limite", "login") or not self.notificar:
+            return
+        chave = f"ia_avisado:{erro.nome}:{erro.tipo}:{date.today().isoformat()}"
+        if not self.estado.cache_ler(chave):  # no máximo um aviso por dia para cada IA
+            self.estado.cache_gravar(chave, "1")
+            self.notificar(texto)
+
+    def _status(self, pid: str, tipo: str, mensagem: str) -> None:
+        """Situação de cada IA, mostrada no app (faixa de aviso e Configurações)."""
+        self.estado.cache_gravar(f"ia_status:{pid}", json.dumps(
+            {"tipo": tipo, "mensagem": mensagem, "provedor": pid,
              "quando": datetime.now().isoformat(timespec="seconds")}, ensure_ascii=False))
 
     # ---- recursos ----

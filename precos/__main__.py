@@ -40,7 +40,9 @@ def _logs() -> None:
 
 
 def _montar_pesquisador(cfg: Config, estado: Estado):
-    provs = {n: criar(cfg.ia, n, cfg.chaves) for n in ("economica", "completa")}
+    provs = {n: [(pid, criar(cfg.ia, n, cfg.chaves, provedor=pid)) for pid in cfg.ia.ligadas()]
+             for n in ("economica", "completa")}
+    provs = {n: [(pid, p) for pid, p in lst if p is not None] for n, lst in provs.items()}
     if not any(provs.values()):
         return None
     return Pesquisador(cfg, estado, provs,

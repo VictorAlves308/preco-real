@@ -57,8 +57,7 @@ class ErroIA(Exception):
     def __init__(self, tipo: str, nome: str, detalhe: str = ""):
         self.tipo, self.nome, self.detalhe = tipo, nome, (detalhe or "").strip()[:300]
         self.mensagem = {
-            "limite": f"{nome}: o limite de uso do seu plano acabou. A pesquisa com IA volta sozinha "
-                      "quando o limite renovar; até lá sigo só com as regras.",
+            "limite": f"{nome}: o limite de uso do seu plano acabou. Ele volta sozinho quando o limite renovar.",
             "login": f"{nome}: você não está conectado (ou o login expirou). Clique em Entrar nas Configurações.",
             "nao_instalado": f"{nome} não está instalado neste PC.",
             "conexao": f"Não consegui falar com {nome} (sem internet ou serviço fora do ar). "
@@ -221,8 +220,12 @@ def modelo_escolhido(cfg: ConfigIA, provedor: str, nivel: str) -> str | None:
     return PADRAO.get(provedor, {}).get(nivel)
 
 
-def criar(cfg: ConfigIA, nivel: str, chaves: dict):
+def criar(cfg: ConfigIA, nivel: str, chaves: dict, provedor: str | None = None):
     """Devolve o provedor para o nível ('economica' ou 'completa'), ou None se não houver IA."""
+    if provedor is not None:
+        from dataclasses import replace
+
+        cfg = replace(cfg, provedor=provedor)
     if cfg.provedor not in PADRAO:
         return None
     if cfg.provedor in EXECUTAVEIS:  # pelo plano: precisa do programa instalado

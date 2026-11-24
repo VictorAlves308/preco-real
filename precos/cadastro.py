@@ -270,15 +270,48 @@ class Api:
                   "instalar": "npm install -g @openai/codex", "entrar": "codex login"},
     }
 
-    def _status_salvo(self):
-        st = Estado(self._estado_path).cache_ler("ia_status")
+    def _status_salvo(self, pid: str):
+        st = Estado(self._estado_path).cache_ler(f"ia_status:{pid}")
         try:
             return json.loads(st) if st else None
         except ValueError:
             return None
 
+    def _ligadas(self, raw: dict) -> list[str]:
+        ia = raw.get("ia", {})
+        return ConfigIA(provedor=ia.get("provedor", "nenhum"), conexoes=ia.get("conexoes", [])).ligadas()
+
+    def _salvar_ligadas(self, raw: dict, ligadas: list[str]) -> None:
+        ia = raw.setdefault("ia", {})
+        ia["conexoes"] = ligadas
+        ia["provedor"] = ligadas[0] if ligadas else "nenhum"
+        _gravar(self._config_path, raw, CABECALHO)
+
+    @staticmethod
+    def _pid(id_: str, provedor_api: str | None) -> str:
+        return (provedor_api if provedor_api in ("claude", "openai") else "claude") if id_ == "api" else id_
+
+    def ligar_ia(self, id_: str, ligado: bool, provedor_api: str | None = None) -> dict:
+        raw = _ler(self._config_path)
+        if id_ == "api" and provedor_api is None:
+            atual = [x for x in self._ligadas(raw) if x in ("claude", "openai")]
+            provedor_api = atual[0] if atual else raw.get("ia", {}).get("provedor")
+        pid = self._pid(id_, provedor_api)
+        lig = [x for x in self._ligadas(raw) if x != pid and not (id_ == "api" and x in ("claude", "openai"))]
+        if ligado:
+            lig.append(pid)
+        self._salvar_ligadas(raw, lig)
+        return self.status_ia()
+
+    def priorizar_ia(self, id_: str) -> dict:
+        raw = _ler(self._config_path)
+        lig = self._ligadas(raw)
+        alvo = [x for x in lig if x == id_ or (id_ == "api" and x in ("claude", "openai"))]
+        self._salvar_ligadas(raw, alvo + [x for x in lig if x not in alvo])
+        return self.status_ia()
+
     def _gravar_status(self, provedor: str, tipo: str, mensagem: str) -> None:
-        Estado(self._estado_path).cache_gravar("ia_status", json.dumps(
+        Estado(self._estado_path).cache_gravar(f"ia_status:{provedor}", json.dumps(
             {"tipo": tipo, "mensagem": mensagem, "provedor": provedor,
              "quando": datetime.now().isoformat(timespec="seconds")}, ensure_ascii=False))
 
@@ -327,7 +360,7 @@ class Api:
             if id_ in self._CLI:
                 conta = self.estado_login(id_)["conta"]
                 r["mensagem"] = "Conectado" + (f" · {conta}" if conta else "") + "."
-            self.selecionar_ia(id_, _ler(self._config_path).get("ia", {}).get("provedor"))
+            self.ligar_ia(id_, True)
         return r
 
     def desconectar_ia(self, id_: str) -> dict:
@@ -338,11 +371,8 @@ class Api:
                 self._rodar_cmd([exe, *self._LOGIN[id_][2]], "", 60, str(RAIZ))
             except Exception:  # noqa: BLE001
                 pass
-        raw = _ler(self._config_path)
-        if raw.get("ia", {}).get("provedor") == id_:
-            self.selecionar_ia("")
-        Estado(self._estado_path).cache_gravar("ia_status", "")
-        return self.status_ia()
+        Estado(self._estado_path).cache_gravar(f"ia_status:{id_}", "")
+        return self.ligar_ia(id_, False)
 
     def salvar_modelo(self, id_: str, nivel: str, modelo: str, provedor_api: str | None = None) -> dict:
         raw = _ler(self._config_path)
@@ -368,7 +398,8 @@ class Api:
 
     def status_ia(self) -> dict:
         raw, seg = _ler(self._config_path), _ler(self._segredos_path)
-        prov = raw.get("ia", {}).get("provedor", "nenhum")
+        api_ligada = [x for x in self._ligadas(raw) if x in ("claude", "openai")]
+        prov = api_ligada[0] if api_ligada else raw.get("ia", {}).get("provedor", "nenhum")
         conexoes = []
         for id_, c in self._CLI.items():
             exe = self._localizar(c["exe"])
@@ -393,9 +424,17 @@ class Api:
             "opcoes_claude": OPCOES["claude"], "opcoes_openai": OPCOES["openai"],
             "modelos": self._modelos(raw, prov if prov in ("claude", "openai") else "claude"),
         })
-        selecionado = prov if prov in self._CLI else ("api" if prov in ("claude", "openai") else "")
-        return {"selecionado": selecionado, "conexoes": conexoes, "status": self._status_salvo(),
-                "efeito_geral": _EFEITO_GERAL}
+        ligadas = self._ligadas(raw)
+        ui = []
+        for pid in ligadas:
+            u = {"claude": "api", "openai": "api"}.get(pid, pid)
+            if u not in ui:
+                ui.append(u)
+        status = {}
+        for c in conexoes:
+            pid = c["provedor_api"] if c["id"] == "api" else c["id"]
+            status[c["id"]] = self._status_salvo(pid)
+        return {"ligados": ui, "conexoes": conexoes, "status": status, "efeito_geral": _EFEITO_GERAL}
 
     def testar_ia(self, id_: str) -> dict:
         inicio = time.time()
@@ -410,7 +449,8 @@ class Api:
                 nome_prov = id_
             else:
                 raw = _ler(self._config_path)
-                p_api = raw.get("ia", {}).get("provedor")
+                api_ligada = [x for x in self._ligadas(raw) if x in ("claude", "openai")]
+                p_api = api_ligada[0] if api_ligada else raw.get("ia", {}).get("provedor")
                 p_api = p_api if p_api in ("claude", "openai") else "claude"
                 seg = _ler(self._segredos_path)
                 prov = criar(ConfigIA(provedor=p_api), "economica",
@@ -427,17 +467,6 @@ class Api:
         self._gravar_status(nome_prov, "ok", msg)
         return {"ok": True, "tipo": "ok", "mensagem": msg}
 
-    def selecionar_ia(self, id_: str, provedor_api: str | None = None) -> dict:
-        raw = _ler(self._config_path)
-        ia = raw.setdefault("ia", {})
-        if id_ in self._CLI:
-            ia["provedor"] = id_
-        elif id_ == "api":
-            ia["provedor"] = provedor_api if provedor_api in ("claude", "openai") else "claude"
-        else:
-            ia["provedor"] = "nenhum"
-        _gravar(self._config_path, raw, CABECALHO)
-        return self.status_ia()
 
     def _terminal(self, comando: str) -> None:
         if os.name == "nt":
@@ -457,11 +486,18 @@ class Api:
         return ""
 
     def _faixa_ia(self) -> str:
-        st = self._status_salvo()
-        prov = _ler(self._config_path).get("ia", {}).get("provedor", "nenhum")
-        if not st or st.get("tipo") in (None, "ok") or prov == "nenhum":
+        ligadas = self._ligadas(_ler(self._config_path))
+        situ = [(pid, self._status_salvo(pid)) for pid in ligadas]
+        erros = [(pid, st) for pid, st in situ if st and st.get("tipo") not in (None, "ok")]
+        if not erros:
             return ""
-        return (f'<div class="faixa {escape(st["tipo"])}"><span>{escape(st.get("mensagem", ""))}</span>'
+        ok = [pid for pid, st in situ if not st or st.get("tipo") == "ok"]
+        tipo, msg = erros[0][1]["tipo"], erros[0][1].get("mensagem", "")
+        if ok:
+            msg, tipo = f"{msg} Usando {NOMES.get(ok[0], ok[0])} enquanto isso.", "limite"
+        elif tipo == "limite":
+            msg += " Até lá sigo só com as regras."
+        return (f'<div class="faixa {escape(tipo)}"><span>{escape(msg)}</span>'
                 '<button class="btn" data-ir="config">Ver configurações</button></div>')
 
     def abrir(self, link: str) -> None:
@@ -697,6 +733,7 @@ footer .status{flex:1;color:var(--suave);font-size:12.5px}
 .modelos .aviso-modelo{grid-column:1/3}
 .modelos select,.modelos input{padding:7px 10px}
 .btn.discreto{color:var(--suave)}
+.ordem{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--normal-bg);color:var(--normal-tx)}
 .caixa{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--borda-forte);background:transparent;
   display:grid;place-items:center;color:transparent;padding:0}
 .caixa:disabled{opacity:.4;cursor:not-allowed}
@@ -855,10 +892,12 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#verificar-ia')) { testes = {}; carregarIA(); }
   const lg = e.target.closest('[data-ligar]');
   if (lg && api() && !lg.disabled) { const id = lg.dataset.ligar;
-    if (IA.selecionado === id) { IA = await api().selecionar_ia('', null); renderIA(); status('Pesquisa com IA desligada.'); }
-    else if (id === 'api') { abertoApi = true; IA.selecionado = 'api'; renderIA(); }
+    if (IA.ligados.includes(id)) { IA = await api().ligar_ia(id, false, null); renderIA(); status('Desligada.'); }
+    else if (id === 'api') { abertoApi = true; renderIA(); }
     else conectar(id); }
   const cn = e.target.closest('[data-conectar]'); if (cn && api()) conectar(cn.dataset.conectar);
+  const pr = e.target.closest('[data-priorizar]');
+  if (pr && api()) { IA = await api().priorizar_ia(pr.dataset.priorizar); renderIA(); status('Ordem atualizada.'); }
   const dc = e.target.closest('[data-desconectar]');
   if (dc && api()) { if (dc.dataset.conf) { IA = await api().desconectar_ia(dc.dataset.desconectar);
       delete testes[dc.dataset.desconectar]; renderIA(); status('Desconectado.'); }
@@ -873,7 +912,7 @@ document.addEventListener('click', async e => {
     const r = await api().salvar_geral({provedor: prov, chave: $('#g-chave').value, limite_gasto_mensal: $('#g-limite').value});
     if (!r.ok) { status(r.erro); return; }
     abertoApi = false; testes.api = {tipo: 'testando', mensagem: 'Conferindo a chave…'}; renderIA();
-    testes.api = await api().conectar_ia('api'); IA = await api().selecionar_ia('api', prov); renderIA(); }
+    testes.api = await api().conectar_ia('api'); IA = await api().status_ia(); renderIA(); }
   if (e.target.closest('#verificar') && api()) { status(await api().verificar_agora()); acompanhar(); }
   if (e.target.closest('#testar') && api()) status(await api().testar_aviso());
 });
@@ -902,10 +941,11 @@ function blocoModelos(c){
     ${campo('economica', 'Pesquisa econômica')}${campo('completa', 'Pesquisa completa')}</div>`;
 }
 function rowIA(c){
-  const ligado = IA.selecionado === c.id, t = testes[c.id] ||
-    (IA.status && IA.status.provedor === (c.id === 'api' ? c.provedor_api : c.id) ? IA.status : null);
+  const pos = IA.ligados.indexOf(c.id) + 1, ligado = pos > 0, t = testes[c.id] || (IA.status || {})[c.id];
   const conectado = t && t.tipo === 'ok';
   let acoes = '', extra = '';
+  if (ligado && IA.ligados.length > 1) acoes += `<span class="ordem" title="Ordem de uso">${pos}º</span>` +
+    (pos > 1 ? `<button class="btn discreto" data-priorizar="${c.id}">Usar primeiro</button>` : '');
   if (!c.instalado) acoes += `<button class="btn" data-instalar="${c.id}">Instalar</button>`;
   else if (c.tipo === 'api') acoes += `<button class="btn" data-configurar-api>${abertoApi ? 'Fechar' : 'Configurar'}</button>`;
   else if (conectado) acoes += `<span class="selo">plano</span><button class="btn discreto" data-desconectar="${c.id}">Desconectar</button>`;
@@ -1041,8 +1081,9 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
         '<path d="m4 17 6-6-6-6M12 19h8"/></svg></span><h3>Pesquisa com IA</h3>'
         '<button type="button" class="link" id="verificar-ia">Verificar de novo</button></div>'
         '<p class="dica" style="margin-top:0">A IA descarta produtos ruins e lê avaliações. Use o plano que você já '
-        'paga (Claude ou ChatGPT), pelo programa instalado no seu PC, ou uma chave de API. O monitor nunca vê a sua '
-        'senha: quem faz o login é o próprio programa.</p>'
+        'paga (Claude ou ChatGPT), pelo programa instalado no seu PC, ou uma chave de API. Ligue mais de uma: '
+        'se o limite do plano acabar na 1ª, uso a próxima da lista. O monitor nunca vê a sua senha: quem faz o '
+        'login é o próprio programa.</p>'
         '<div id="conexoes-ia" class="conexoes"></div></section>'
     )
     demo_js = (f"<script>window.DADOS_DEMO={json.dumps(demo, ensure_ascii=False)};"

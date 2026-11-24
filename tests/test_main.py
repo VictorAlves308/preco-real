@@ -30,4 +30,4 @@ def test_montar_pesquisador(tmp_path):
     assert m._montar_pesquisador(m.Config(itens=[]), e) is None
     cfg = m.Config(itens=[], ia=ConfigIA(provedor="claude"), chaves={"anthropic_api_key": "k"})
     p = m._montar_pesquisador(cfg, e)
-    assert p is not None and p.provedores["economica"].modelo == "claude-haiku-5-5"
+    assert p is not None and p.provedores["economica"][0][1].modelo == "claude-haiku-5-5"
