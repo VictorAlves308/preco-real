@@ -8,7 +8,7 @@ from datetime import date
 from urllib.parse import parse_qs, urlparse
 
 from . import zoom
-from .avisos import Achado, abrir_janela, enviar_ntfy, enviar_whatsapp, formatar
+from .avisos import Achado, abrir_janela, dados_janela, enviar_ntfy, enviar_whatsapp, formatar
 from .config import Config, Item
 from .estado import Estado
 from .regras import elegivel, ordenar, passa_filtro_nome, veredito
@@ -121,7 +121,7 @@ def avisar_todos(cfg: Config):
         links = [a.oferta.link for a in achados]
         res = {"janela": False, "ntfy": False, "whatsapp": False}
         try:
-            abrir_janela(titulo, corpo, links)
+            abrir_janela(titulo, corpo, links, dados_janela(achados))
             res["janela"] = True
         except Exception as e:  # noqa: BLE001
             log.warning("janela falhou: %s", e)

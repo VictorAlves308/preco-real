@@ -41,12 +41,32 @@ def _frete(loja: str) -> str:
     return "frete grátis (Meli+)" if "mercado livre" in loja.lower() else "frete: confira na loja"
 
 
+ROTULOS_JANELA = {"real": "Promoção real", "sem_historico": "Sem histórico", "normal": "Menor preço já visto"}
+
+
+def _parcelas(o: Oferta) -> str:
+    if o.parcelas and o.parcelas > 12:
+        return f"em {o.parcelas}x (confira sem juros na loja)"
+    return f"em {o.parcelas}x sem juros"
+
+
+def dados_janela(achados: list[Achado]) -> list[dict]:
+    """Dados separados de cada oferta, para a janela montar os cartões."""
+    return [
+        {
+            "item": a.item, "nome": a.oferta.nome, "loja": a.oferta.loja,
+            "preco": moeda(a.oferta.total_parcelado), "parcelas": _parcelas(a.oferta),
+            "pix": f"PIX {moeda(a.oferta.preco_vista)}", "veredito": a.veredito,
+            "rotulo": ROTULOS_JANELA.get(a.veredito, a.veredito), "tags": list(a.tags),
+            "frete": _frete(a.oferta.loja), "link": a.oferta.link,
+        }
+        for a in achados
+    ]
+
+
 def _bloco(a: Achado) -> str:
     o = a.oferta
-    if o.parcelas and o.parcelas > 12:
-        parc = f"em {o.parcelas}x (confira sem juros na loja)"
-    else:
-        parc = f"em {o.parcelas}x sem juros"
+    parc = _parcelas(o)
     rotulo = ROTULOS.get(a.veredito, a.veredito)
     tags = "".join(f" · {t}" for t in a.tags)
     return (
@@ -97,11 +117,11 @@ def enviar_whatsapp(cfg: Config, corpo: str, sessao=None) -> bool:
         return False
 
 
-def abrir_janela(titulo: str, corpo: str, links: list[str]) -> None:
+def abrir_janela(titulo: str, corpo: str, links: list[str], itens: list[dict] | None = None) -> None:
     """Abre a janela em outro processo, para a rodada não ficar presa esperando fechar."""
     fd, caminho = tempfile.mkstemp(suffix=".json", prefix="precos_")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump({"titulo": titulo, "corpo": corpo, "links": links}, f, ensure_ascii=False)
+        json.dump({"titulo": titulo, "corpo": corpo, "links": links, "itens": itens or []}, f, ensure_ascii=False)
     exe = Path(sys.executable)
     pyw = exe.with_name("pythonw.exe")
     flags = 0

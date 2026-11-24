@@ -73,3 +73,28 @@ def test_whatsapp_nao_configurado():
     s = Captura()
     assert enviar_whatsapp(Config(itens=[]), "c", sessao=s) is False
     assert s.chamadas == []
+
+
+def test_dados_janela():
+    from precos.avisos import dados_janela
+    d = dados_janela([Achado("Ryzen 7 5700X", _oferta(), "real", ["painel não confirmado"])])[0]
+    assert d == {
+        "item": "Ryzen 7 5700X", "nome": "Ryzen 7 5700X", "loja": "KaBuM!",
+        "preco": "R$ 1.529,40", "parcelas": "em 10x sem juros", "pix": "PIX R$ 1.299,99",
+        "veredito": "real", "rotulo": "Promoção real", "tags": ["painel não confirmado"],
+        "frete": "frete: confira na loja", "link": "https://www.zoom.com.br/lead?oid=743605209",
+    }
+
+
+def test_janela_monta_um_cartao_por_oferta():
+    import tkinter as tk
+    from precos.avisos import dados_janela
+    from precos import janela
+    itens = dados_janela([Achado("A", _oferta(), "real", []), Achado("B", _oferta(), "sem_historico", [])])
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        cartoes = janela.construir(root, "2 ofertas", itens, "claro")
+        assert len(cartoes) == 2
+    finally:
+        root.destroy()
