@@ -213,3 +213,20 @@ def test_achado_leva_historico_do_produto(tmp_path):
     assert achados[0].veredito == "real"
     assert len(achados[0].historico) >= 30
     assert achados[0].oferta.imagem
+
+
+def _cpu_com_preco(vista, total):
+    est = copy.deepcopy(estado("zoom_produto_5700x.json"))
+    for o in est["offers"]["offerList"]:
+        o["price"], o["totalParceledValue"] = vista, total
+    return html_de(est)
+
+
+def test_menor_preco_visto_exige_abaixo_da_mediana(tmp_path):
+    # mediana dos 90 dias do fixture é 1199,99: 1220 é "normal" mas acima do normal -> não avisa
+    assert _rodar([_cpu("mais_barato")], {URL_CPU: _cpu_com_preco(1220.0, 1400.0)}, tmp_path, Avisar()) == []
+
+
+def test_menor_preco_visto_abaixo_da_mediana_avisa(tmp_path):
+    achados = _rodar([_cpu("mais_barato")], {URL_CPU: _cpu_com_preco(1150.0, 1300.0)}, tmp_path, Avisar())
+    assert [a.veredito for a in achados] == ["normal"]

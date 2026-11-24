@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from statistics import median
 from datetime import date
 from urllib.parse import parse_qs, urlparse
 
@@ -94,6 +95,9 @@ def _escolher(item: Item, cands, estado: Estado, pesquisador=None) -> list[Achad
         if v == "sem_historico" and not mais_barato_que_antes:
             continue
         if v == "normal" and not (item.modo == "mais_barato" and mais_barato_que_antes):
+            continue
+        # "Menor preço já visto" não pode estar acima do normal dos 90 dias do Zoom
+        if v == "normal" and hist and o.preco_vista > median(hist):
             continue
         if estado.ja_avisado(item.nome, o.offer_id, o.total_parcelado):
             continue

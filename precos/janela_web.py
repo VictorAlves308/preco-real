@@ -7,6 +7,13 @@ from html import escape
 from pathlib import Path
 
 TEMAS = ("sistema", "claro", "escuro")
+# Ícones (traço, estilo Lucide, licença ISC) desenhados inline: monitor, sol, lua
+ICONES = {
+    "sistema": '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>',
+    "claro": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41'
+             'M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+    "escuro": '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+}
 MUITO_ACIMA = 1.10  # 10% ou mais acima da mediana: trecho vermelho
 PREF = Path(__file__).resolve().parent.parent / "dados" / "preferencias.json"
 
@@ -15,6 +22,8 @@ _CLARO = """
   --suave:#6B6862; --acento:#1F7A5C; --acento-hover:#18674D; --acento-texto:#FFFFFF;
   --real-bg:#E3F1EA; --real-tx:#1F6B4F; --sem-bg:#F6EDD9; --sem-tx:#7A5512;
   --normal-bg:#EEEDEA; --normal-tx:#4A4843; --foto:#FFFFFF;
+  --bom-bg:#E6F4EC; --bom-tx:#18714A; --alto-bg:#FCEBD8; --alto-tx:#9A4A00;
+  --muito-bg:#FBE1DF; --muito-tx:#A8231B;
   --bom:#1E9D62; --alto:#E07B12; --muito-alto:#D7372F; --mediana:#9A968E; --seg-ativo:#FFFFFF;
 """
 _ESCURO = """
@@ -22,6 +31,8 @@ _ESCURO = """
   --suave:#9C9A94; --acento:#4FB38E; --acento-hover:#62C39F; --acento-texto:#0B1F17;
   --real-bg:#173327; --real-tx:#8FD6B5; --sem-bg:#352A12; --sem-tx:#E9C77A;
   --normal-bg:#2A2927; --normal-tx:#C9C6BF; --foto:#FFFFFF;
+  --bom-bg:#16301F; --bom-tx:#86D9AE; --alto-bg:#3A2814; --alto-tx:#F5B26B;
+  --muito-bg:#3D1A18; --muito-tx:#F59A93;
   --bom:#45C98A; --alto:#F5A04A; --muito-alto:#F2635B; --mediana:#7C7A74; --seg-ativo:#2E2D2A;
 """
 
@@ -38,9 +49,13 @@ body{background:var(--fundo);color:var(--texto);
 header{padding:20px 20px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 h1{font-size:19px;font-weight:650;letter-spacing:-.01em}
 header p{color:var(--suave);font-size:12.5px;margin-top:2px}
-.temas{display:flex;background:var(--borda);border-radius:8px;padding:2px;flex:none}
-.temas button{border:0;background:transparent;color:var(--suave);font-size:12px;padding:4px 10px;border-radius:6px}
-.temas button[aria-pressed="true"]{background:var(--seg-ativo);color:var(--texto);font-weight:600}
+.temas{display:flex;gap:2px;background:var(--cartao);border:1px solid var(--borda);border-radius:999px;
+  padding:3px;flex:none}
+.temas button{width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:999px;
+  background:transparent;color:var(--suave);transition:background .15s,color .15s}
+.temas button:hover{color:var(--texto)}
+.temas button[aria-pressed="true"]{background:var(--acento);color:var(--acento-texto)}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 main{flex:1;overflow-y:auto;padding:4px 14px 16px 20px;display:flex;flex-direction:column;gap:12px;
   scrollbar-gutter:stable}
 main::-webkit-scrollbar{width:10px}
@@ -57,13 +72,16 @@ main::-webkit-scrollbar-thumb:hover{background:var(--suave)}
   -webkit-box-orient:vertical;overflow:hidden}
 .preco-linha{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:14px}
 .preco-linha>div{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px}
-.preco-linha .chip{margin-top:6px}
+
 .preco{font-size:26px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
 .parc{color:var(--suave);font-size:13px;white-space:nowrap}
 .chip{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap}
 .chip.real{background:var(--real-bg);color:var(--real-tx)}
 .chip.sem_historico{background:var(--sem-bg);color:var(--sem-tx)}
-.chip.normal{background:var(--normal-bg);color:var(--normal-tx)}
+.chip.normal{background:var(--bom-bg);color:var(--bom-tx)}
+.chip.alto{background:var(--alto-bg);color:var(--alto-tx)}
+.chip.muito{background:var(--muito-bg);color:var(--muito-tx)}
+.chips{display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-top:6px}
 .loja{color:var(--suave);font-size:12.5px;margin-top:2px;font-variant-numeric:tabular-nums}
 .hist{margin-top:14px;padding-top:12px;border-top:1px solid var(--borda)}
 .hist-titulo{display:flex;justify-content:space-between;font-size:12px;color:var(--suave);margin-bottom:6px}
@@ -180,13 +198,15 @@ def _cartao(d: dict, idx: int) -> str:
     e = escape
     foto = (f'<img class="foto" src="{e(d["imagem"])}" alt="">' if d.get("imagem")
             else '<div class="foto"></div>')
-    hist = ""
+    hist, chip_zona = "", ""
     if d.get("historico"):
         vals = list(d["historico"]) + ([d["vista_num"]] if d.get("vista_num") else [])
         ordenados = sorted(vals)
         med = ordenados[len(ordenados) // 2]
         zona = "bom" if vals[-1] <= med else "alto" if vals[-1] < med * MUITO_ACIMA else "muito"
         resumo = {"bom": "abaixo do normal", "alto": "acima do normal", "muito": "muito acima do normal"}[zona]
+        if zona != "bom":
+            chip_zona = f'<span class="chip {zona}">{resumo.capitalize()}</span>'
         hist = (
             '<figure class="hist">'
             '<div class="hist-titulo"><span>Preço à vista · últimos 90 dias</span>'
@@ -206,7 +226,7 @@ def _cartao(d: dict, idx: int) -> str:
         f'<h2 class="nome">{e(d["nome"])}</h2></div></div>'
         f'<div class="preco-linha"><div><span class="preco">{e(d["preco"])}</span>'
         f'<span class="parc">{e(d["parcelas"])}</span></div>'
-        f'<span class="chip {e(d["veredito"])}">{e(d["rotulo"])}</span></div>'
+        f'<div class="chips"><span class="chip {e(d["veredito"])}">{e(d["rotulo"])}</span>{chip_zona}</div></div>'
         f'<p class="loja">{loja}</p>{hist}{tags}'
         f'<div class="rodape"><span class="frete">{e(d["frete"])}</span>'
         f'<button class="abrir" data-link="{e(d["link"])}">Ver oferta</button></div>'
@@ -217,7 +237,11 @@ def _cartao(d: dict, idx: int) -> str:
 def html_janela(titulo: str, itens: list[dict], verificado: str, tema: str = "sistema") -> str:
     tema = tema if tema in TEMAS else "sistema"
     cartoes = "".join(_cartao(d, i) for i, d in enumerate(itens))
-    seletor = "".join(f'<button data-escolha="{t}">{t.capitalize()}</button>' for t in TEMAS)
+    seletor = "".join(
+        f'<button data-escolha="{t}" aria-label="{rotulo}" title="{rotulo}">'
+        f'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">{ICONES[t]}</svg></button>'
+        for t, rotulo in (("sistema", "Seguir o sistema"), ("claro", "Tema claro"), ("escuro", "Tema escuro"))
+    )
     return (
         f'<!doctype html><html lang="pt-BR" data-tema="{tema}"><head><meta charset="utf-8">'
         f"<title>{escape(titulo)}</title><style>{CSS}</style></head><body>"

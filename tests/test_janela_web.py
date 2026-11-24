@@ -12,7 +12,7 @@ ITEM = {
 def test_um_cartao_por_oferta():
     html = html_janela("2 ofertas", [ITEM, dict(ITEM, historico=[], imagem="")], "12:56")
     assert html.count('class="cartao"') == 2
-    assert html.count("<svg") == 1  # só quem tem histórico ganha gráfico
+    assert html.count("<clipPath") == 3  # só quem tem histórico ganha gráfico
     assert "Verificado às 12:56" in html
     assert "Menor <b>R$ 679,00</b>" in html
 
@@ -64,3 +64,24 @@ def test_trecho_muito_alto_vermelho():
     assert 'fill="var(--muito-alto)"' in svg  # hoje muito acima: ponto vermelho
     html = html_janela("t", [dict(ITEM, historico=[1000.0] * 10, vista_num=1300.0)], "00:00")
     assert "muito acima do normal" in html and 'class="ponto muito"' in html
+
+
+def test_badge_de_preco_caro():
+    caro = html_janela("t", [dict(ITEM, historico=[1000.0] * 10, vista_num=1300.0)], "00:00")
+    assert '<span class="chip muito">Muito acima do normal</span>' in caro
+    medio = html_janela("t", [dict(ITEM, historico=[1000.0] * 10, vista_num=1050.0)], "00:00")
+    assert '<span class="chip alto">Acima do normal</span>' in medio
+    barato = html_janela("t", [dict(ITEM, historico=[1000.0] * 10, vista_num=900.0)], "00:00")
+    assert 'chip alto' not in barato and 'chip muito' not in barato
+
+
+def test_badge_menor_preco_verde():
+    from precos.janela_web import CSS
+    assert ".chip.normal{background:var(--bom-bg);color:var(--bom-tx)}" in CSS
+
+
+def test_seletor_de_tema_com_icones():
+    html = html_janela("t", [ITEM], "00:00")
+    assert html.count('<svg class="ic"') == 3
+    for rotulo in ("Seguir o sistema", "Tema claro", "Tema escuro"):
+        assert f'aria-label="{rotulo}"' in html
