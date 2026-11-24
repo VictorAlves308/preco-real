@@ -280,6 +280,21 @@ class Api:
 
     def ofertas(self) -> dict:
         """Aba Ofertas: as melhores ofertas de cada produto na última verificação."""
+        if not _ler(self._config_path).get("itens"):
+            return {"quando": "", "html": self._faixa_ia() + (
+                '<div class="boas-vindas cartao"><h2>Bem-vindo ao Monitor de preços</h2>'
+                "<p>Ele acompanha o preço do que você quer comprar, confere no histórico se a promoção é de verdade "
+                "e te avisa aqui no PC e no celular.</p>"
+                '<ol class="passos">'
+                '<li class="passo"><span><b>Cadastre o que você quer comprar.</b> É só escrever como buscaria '
+                "numa loja, sem colar link.</span></li>"
+                '<li class="passo"><span><b>Ligue o aviso no celular</b> em Configurações (app gratuito ntfy, '
+                "sem cadastro).</span></li>"
+                '<li class="passo"><span><b>Pronto.</b> O monitor verifica sozinho e avisa quando aparecer '
+                "promoção de verdade.</span></li></ol>"
+                '<div class="botoes" style="justify-content:flex-start">'
+                '<button class="btn primario" data-novo-produto>Adicionar o primeiro produto</button>'
+                '<button class="btn" data-ir="config">Configurar o aviso no celular</button></div></div>')}
         try:
             snap = json.loads(self._instantaneo.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -797,6 +812,9 @@ summary{cursor:pointer;font-weight:600;font-size:13px;color:var(--suave)}
 details[open] summary{margin-bottom:14px;color:var(--texto)}
 details .grade{display:flex;flex-direction:column;gap:14px}
 .dicas{border:0;padding:0;margin-top:-6px}
+.boas-vindas{display:flex;flex-direction:column;gap:14px;padding:24px}
+.boas-vindas h2{font-size:18px;font-weight:650}
+.boas-vindas>p{color:var(--suave)}
 .passos{margin:0;padding:0;list-style:none;counter-reset:p;display:flex;flex-direction:column;gap:8px}
 .passo{counter-increment:p;display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--suave)}
 .passo::before{content:counter(p);flex:none;width:22px;height:22px;border-radius:50%;background:var(--bom-bg);
@@ -1002,6 +1020,7 @@ document.addEventListener('click', async e => {
   if (ex) { if (ex.dataset.conf) { const r = await api().excluir_item(+ex.dataset.excluir); D = r.dados; render(); status('Produto excluído.'); }
             else { ex.dataset.conf = '1'; ex.textContent = 'Confirmar'; setTimeout(() => { delete ex.dataset.conf; ex.textContent = 'Excluir'; }, 3000); } }
   if (e.target.closest('#adicionar')) abrirForm(null);
+  if (e.target.closest('[data-novo-produto]')) { document.querySelector('[data-aba="produtos"]').click(); abrirForm(null); }
   if (e.target.closest('#cancelar')) fecharForm();
   const lk = e.target.closest('[data-link]'); if (lk && api()) api().abrir(lk.dataset.link);
   const ir = e.target.closest('[data-ir]'); if (ir) document.querySelector(`[data-aba="${ir.dataset.ir}"]`).click();

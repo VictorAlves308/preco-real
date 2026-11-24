@@ -436,3 +436,11 @@ def test_ntfy_explicado_passo_a_passo():
     assert 'id="gerar-canal"' in html and 'id="copiar-canal"' in html
     assert html.count('class="passo"') == 4
     assert 'id="canal-aviso"' in html
+
+
+def test_primeiro_uso_guia_o_cadastro(tmp_path):
+    (tmp_path / "config.toml").write_text("", encoding="utf-8")
+    api = Api(tmp_path / "config.toml", tmp_path / "s.toml", tmp_path / "e.db", instantaneo=tmp_path / "u.json")
+    html = api.ofertas()["html"]
+    assert "Bem-vindo" in html and 'data-novo-produto' in html
+    assert "ntfy" in html  # lembra de configurar o aviso no celular
