@@ -63,7 +63,7 @@ def test_trecho_muito_alto_vermelho():
     assert "var(--muito-alto)" in svg
     assert 'fill="var(--muito-alto)"' in svg  # hoje muito acima: ponto vermelho
     html = html_janela("t", [dict(ITEM, historico=[1000.0] * 10, vista_num=1300.0)], "00:00")
-    assert "muito acima do normal" in html and 'class="ponto muito"' in html
+    assert "Muito acima do normal" in html and 'class="ponto muito"' in html
 
 
 def test_badge_de_preco_caro():
@@ -91,3 +91,17 @@ def test_aviso_tem_botao_abrir_monitor():
     assert 'class="btn-monitor"' in html_janela("t", [ITEM], "00:00")
     from precos.janela_web import CSS
     assert ".chip.maquiada" in CSS
+
+
+def test_textos_comecam_com_maiuscula():
+    import re
+    html = html_janela("Ofertas", [dict(ITEM, historico=[1000.0] * 10, vista_num=1300.0)], "00:00")
+    assert "Muito acima do normal</span></div>" in html  # resumo do gráfico
+    textos = re.findall(r">([^<>]+)<", html.split("<body>")[1].split("<script>")[0])
+    soltos = [t.strip() for t in textos if t.strip() and t.strip()[0].isalpha()]
+    assert all(t[0].isupper() for t in soltos), [t for t in soltos if not t[0].isupper()]
+
+
+def test_abrir_monitor_mostra_abrindo():
+    from precos.janela_web import JS
+    assert "Abrindo" in JS

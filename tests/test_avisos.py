@@ -34,14 +34,14 @@ def test_formatar():
     assert "R$ 1.529,40 em 10x sem juros" in corpo
     assert "PIX R$ 1.299,99" in corpo
     assert "sem histórico, não confirmado" in corpo
-    assert "frete: confira na loja" in corpo
+    assert "Frete: confira na loja" in corpo
     assert "https://www.zoom.com.br/lead?oid=743605209" in corpo
     assert "1" in titulo
 
 
 def test_formatar_mercado_livre_e_parcelas_longas():
     _, corpo = formatar([Achado("x", _oferta(loja="Mercado Livre", parcelas=18), "real", ["painel não confirmado"])])
-    assert "frete grátis (Meli+)" in corpo
+    assert "Frete grátis (Meli+)" in corpo
     assert "em 18x (confira sem juros na loja)" in corpo
     assert "promoção real" in corpo
     assert "painel não confirmado" in corpo
@@ -80,9 +80,9 @@ def test_dados_janela():
     d = dados_janela([Achado("Ryzen 7 5700X", _oferta(), "real", ["painel não confirmado"])])[0]
     assert d.items() >= {
         "item": "Ryzen 7 5700X", "nome": "Ryzen 7 5700X", "loja": "KaBuM!",
-        "preco": "R$ 1.529,40", "parcelas": "em 10x sem juros", "pix": "PIX R$ 1.299,99",
-        "veredito": "real", "rotulo": "Promoção real", "tags": ["painel não confirmado"],
-        "frete": "frete: confira na loja", "link": "https://www.zoom.com.br/lead?oid=743605209",
+        "preco": "R$ 1.529,40", "parcelas": "Em 10x sem juros", "pix": "PIX R$ 1.299,99",
+        "veredito": "real", "rotulo": "Promoção real", "tags": ["Painel não confirmado"],
+        "frete": "Frete: confira na loja", "link": "https://www.zoom.com.br/lead?oid=743605209",
     }.items()
 
 

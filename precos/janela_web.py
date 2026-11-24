@@ -105,6 +105,7 @@ button{font:inherit;cursor:pointer;border-radius:8px}
 footer{padding:12px 20px 16px;display:flex;justify-content:space-between;border-top:1px solid var(--borda)}
 .btn-monitor{background:transparent;color:var(--texto);border:1px solid var(--borda);padding:7px 14px}
 .btn-monitor:hover{background:var(--cartao)}
+.btn-monitor:disabled{opacity:.7;cursor:progress}
 .fechar{background:transparent;color:var(--texto);border:1px solid var(--borda);padding:7px 18px}
 .fechar:hover{background:var(--cartao)}
 """
@@ -125,7 +126,9 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-link]');
   if (b) { window.pywebview ? pywebview.api.abrir(b.dataset.link) : window.open(b.dataset.link); }
   if (e.target.closest('.fechar')) { window.pywebview ? pywebview.api.fechar() : window.close(); }
-  if (e.target.closest('.btn-monitor') && window.pywebview) { pywebview.api.abrir_monitor(); }
+  const m = e.target.closest('.btn-monitor');
+  if (m && window.pywebview && !m.disabled) { m.disabled = true; m.textContent = 'Abrindo…';
+    pywebview.api.abrir_monitor(); }
 });
 """
 
@@ -200,8 +203,15 @@ def _moeda(v: float) -> str:
     return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _m(s) -> str:
+    s = str(s or "")
+    return s[:1].upper() + s[1:]
+
+
 def _cartao(d: dict, idx: int) -> str:
     e = escape
+    d = dict(d, parcelas=_m(d.get("parcelas")), frete=_m(d.get("frete")), rotulo=_m(d.get("rotulo")),
+             tags=[_m(t) for t in d.get("tags", [])])
     foto = (f'<img class="foto" src="{e(d["imagem"])}" alt="">' if d.get("imagem")
             else '<div class="foto"></div>')
     hist, chip_zona = "", ""
@@ -210,9 +220,9 @@ def _cartao(d: dict, idx: int) -> str:
         ordenados = sorted(vals)
         med = ordenados[len(ordenados) // 2]
         zona = "bom" if vals[-1] <= med else "alto" if vals[-1] < med * MUITO_ACIMA else "muito"
-        resumo = {"bom": "abaixo do normal", "alto": "acima do normal", "muito": "muito acima do normal"}[zona]
+        resumo = {"bom": "Abaixo do normal", "alto": "Acima do normal", "muito": "Muito acima do normal"}[zona]
         if zona != "bom":
-            chip_zona = f'<span class="chip {zona}">{resumo.capitalize()}</span>'
+            chip_zona = f'<span class="chip {zona}">{resumo}</span>'
         hist = (
             '<figure class="hist">'
             '<div class="hist-titulo"><span>Preço à vista · últimos 90 dias</span>'
@@ -259,6 +269,33 @@ def html_janela(titulo: str, itens: list[dict], verificado: str, tema: str = "si
     )
 
 
+def _esperar_janela(titulo: str, limite: float = 8.0) -> bool:
+    import time
+
+    try:
+        import ctypes
+
+        achar = ctypes.windll.user32.FindWindowW
+    except Exception:  # noqa: BLE001 - fora do Windows só espera um pouco
+        time.sleep(1.5)
+        return False
+    fim = time.time() + limite
+    while time.time() < fim:
+        if achar(None, titulo):
+            time.sleep(0.3)
+            return True
+        time.sleep(0.15)
+    return False
+
+
+def cor_fundo(tema: str) -> str:
+    if tema == "sistema":
+        from .janela import tema_do_sistema
+
+        tema = tema_do_sistema()
+    return "#161615" if tema == "escuro" else "#F6F5F2"
+
+
 class _Api:
     def __init__(self):
         self._janela = None
@@ -280,6 +317,7 @@ class _Api:
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
         subprocess.Popen([str(pyw if pyw.exists() else exe), "-m", "precos", "--cadastro"],
                          cwd=PREF.parent.parent, creationflags=flags, close_fds=True)
+        _esperar_janela("Monitor de preços")  # só fecha o aviso quando o app já estiver na tela
         self.fechar()
 
     def fechar(self) -> None:
@@ -294,5 +332,6 @@ def mostrar(titulo: str, itens: list[dict], verificado: str, tema_padrao: str = 
     tema = ler_tema(PREF, tema_padrao)
     altura = min(150 + 330 * max(len(itens), 1), 800)
     api._janela = webview.create_window(titulo, html=html_janela(titulo, itens, verificado, tema), js_api=api,
-                                       width=560, height=altura, min_size=(460, 360), on_top=True)
+                                       width=560, height=altura, min_size=(460, 360), on_top=True,
+                                       background_color=cor_fundo(tema))
     webview.start()

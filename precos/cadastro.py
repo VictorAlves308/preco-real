@@ -26,7 +26,7 @@ from datetime import datetime
 import webbrowser
 
 from . import janela_web
-from .janela_web import _CLARO, _ESCURO, CSS_CARTAO, ICONES, PREF, TEMAS, salvar_tema
+from .janela_web import _CLARO, _ESCURO, CSS_CARTAO, ICONES, PREF, TEMAS, cor_fundo, salvar_tema
 
 RAIZ = Path(__file__).resolve().parent.parent
 CABECALHO = (
@@ -419,6 +419,19 @@ details .grade{display:flex;flex-direction:column;gap:14px}
 .junto input{flex:1}
 footer{padding:12px 24px 16px;border-top:1px solid var(--borda);display:flex;align-items:center;gap:12px}
 footer .status{flex:1;color:var(--suave);font-size:12.5px}
+.sk{display:block;background:var(--borda);border-radius:6px;animation:pulso 1.2s ease-in-out infinite}
+@keyframes pulso{50%{opacity:.45}}
+.sk-cartao+.sk-cartao{margin-top:12px}
+.sk-topo{display:flex;gap:14px}
+.sk-foto{width:64px;height:64px;border-radius:8px;flex:none}
+.sk-linhas{flex:1;display:flex;flex-direction:column;gap:8px;padding-top:4px}
+.sk-l1{height:10px;width:30%}
+.sk-l2{height:14px;width:80%}
+.sk-preco{height:26px;width:40%;margin-top:18px}
+.sk-graf{height:44px;margin-top:18px}
+.entrar{animation:aparecer .25s ease-out}
+@keyframes aparecer{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.sk,.entrar{animation:none}}
 """
 )
 
@@ -520,7 +533,9 @@ document.addEventListener('click', async e => {
   if (t) { raiz.dataset.tema = t.dataset.escolha; marcarTema(); if (api()) api().salvar_tema(t.dataset.escolha); }
   const aba = e.target.closest('[data-aba]');
   if (aba) { document.querySelectorAll('[data-aba]').forEach(b => b.setAttribute('aria-selected', b === aba));
-    for (const a of ['ofertas','produtos','config']) $('#aba-' + a).classList.toggle('oculto', aba.dataset.aba !== a);
+    for (const a of ['ofertas','produtos','config']) { const s = $('#aba-' + a);
+      s.classList.toggle('oculto', aba.dataset.aba !== a); s.classList.remove('entrar');
+      if (aba.dataset.aba === a) { void s.offsetWidth; s.classList.add('entrar'); } }
   }
   const sb = e.target.closest('.seg button');
   if (sb) { e.preventDefault(); seg(sb.parentElement.dataset.grupo, sb.dataset.v);
@@ -543,7 +558,7 @@ marcarTema();
 let ultimo = null;
 async function carregarOfertas(){
   const r = api() ? await api().ofertas() : window.OFERTAS_DEMO; if (!r) return r;
-  $('#ofertas').innerHTML = r.html;
+  const o = $('#ofertas'); o.innerHTML = r.html; o.classList.remove('entrar'); void o.offsetWidth; o.classList.add('entrar');
   $('#quando').textContent = r.quando ? 'Última verificação: ' + r.quando : '';
   return r;
 }
@@ -641,7 +656,7 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
         '<button data-aba="produtos" aria-selected="false">Produtos</button>'
         '<button data-aba="config" aria-selected="false">Configurações</button></nav>'
         '<main><section id="aba-ofertas"><div class="barra"><span id="quando"></span></div>'
-        '<div id="ofertas"></div></section>'
+        '<div id="ofertas"><div class="cartao sk-cartao"><div class="sk-topo"><span class="sk sk-foto"></span><span class="sk-linhas"><span class="sk sk-l1"></span><span class="sk sk-l2"></span></span></div><span class="sk sk-preco"></span><span class="sk sk-graf"></span></div><div class="cartao sk-cartao"><div class="sk-topo"><span class="sk sk-foto"></span><span class="sk-linhas"><span class="sk sk-l1"></span><span class="sk sk-l2"></span></span></div><span class="sk sk-preco"></span><span class="sk sk-graf"></span></div></div></section>'
         '<section id="aba-produtos" class="oculto"><div id="tela-lista"><div id="lista" class="lista"></div>'
         '<button class="btn primario adicionar" id="adicionar">Adicionar produto</button></div>'
         f'<div id="tela-form" class="oculto">{form_item}</div></section>'
@@ -660,5 +675,5 @@ def abrir() -> None:
     api = Api()
     tema = ler_tema(PREF, _ler(api._config_path).get("aparencia", {}).get("tema", "sistema"))
     webview.create_window("Monitor de preços", html=html_cadastro(tema), js_api=api,
-                          width=760, height=820, min_size=(560, 520))
+                          width=760, height=820, min_size=(560, 520), background_color=cor_fundo(tema))
     webview.start()

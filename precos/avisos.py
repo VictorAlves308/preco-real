@@ -39,8 +39,13 @@ def moeda(v: float) -> str:
     return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def maiuscula(s: str) -> str:
+    """Todo texto solto começa com maiúscula."""
+    return s[:1].upper() + s[1:]
+
+
 def _frete(loja: str) -> str:
-    return "frete grátis (Meli+)" if "mercado livre" in loja.lower() else "frete: confira na loja"
+    return "Frete grátis (Meli+)" if "mercado livre" in loja.lower() else "Frete: confira na loja"
 
 
 ROTULOS_JANELA = {"real": "Promoção real", "sem_historico": "Sem histórico", "normal": "Menor preço já visto",
@@ -58,9 +63,9 @@ def dados_janela(achados: list[Achado]) -> list[dict]:
     return [
         {
             "item": a.item, "nome": a.oferta.nome, "loja": a.oferta.loja,
-            "preco": moeda(a.oferta.total_parcelado), "parcelas": _parcelas(a.oferta),
+            "preco": moeda(a.oferta.total_parcelado), "parcelas": maiuscula(_parcelas(a.oferta)),
             "pix": f"PIX {moeda(a.oferta.preco_vista)}", "veredito": a.veredito,
-            "rotulo": ROTULOS_JANELA.get(a.veredito, a.veredito), "tags": list(a.tags),
+            "rotulo": ROTULOS_JANELA.get(a.veredito, a.veredito), "tags": [maiuscula(t) for t in a.tags],
             "frete": _frete(a.oferta.loja), "link": a.oferta.link, "imagem": a.oferta.imagem,
             "historico": list(a.historico[-90:]),
             "vista_num": a.oferta.preco_vista,

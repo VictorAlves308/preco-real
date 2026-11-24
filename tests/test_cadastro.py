@@ -147,3 +147,15 @@ def test_app_abre_em_ofertas():
     html = html_cadastro()
     assert '<button data-aba="ofertas" aria-selected="true">' in html
     assert 'id="aba-ofertas"' in html
+
+
+def test_app_abre_com_skeleton():
+    html = html_cadastro()
+    inicio = html.split('id="ofertas">')[1][:400]
+    assert 'class="sk' in inicio
+    assert "@keyframes pulso" in html and "linear-gradient" not in html
+
+
+def test_cor_de_fundo_inicial():
+    from precos.cadastro import cor_fundo
+    assert cor_fundo("escuro") == "#161615" and cor_fundo("claro") == "#F6F5F2"
