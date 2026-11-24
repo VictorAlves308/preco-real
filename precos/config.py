@@ -35,7 +35,7 @@ class Item:
 
 @dataclass
 class ConfigIA:
-    provedor: Literal["nenhum", "claude", "openai"] = "nenhum"
+    provedor: Literal["nenhum", "claude", "openai", "claude_code", "codex"] = "nenhum"
     limite_gasto_mensal: float = 5.0  # em dólares
     modelo_economico: str | None = None
     modelo_completo: str | None = None

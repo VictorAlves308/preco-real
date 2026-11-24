@@ -19,7 +19,8 @@ from urllib.parse import parse_qs, urlparse
 import time
 
 from . import zoom
-from .config import carregar, url_busca
+from .config import ConfigIA, carregar, url_busca
+from .ia import NOMES, ClaudeCode, Codex, ErroIA, _rodar_cmd, classificar_erro, criar
 from .estado import Estado
 from .regras import passa_filtro_nome
 from datetime import datetime
@@ -172,22 +173,24 @@ def form_de_item(raw: dict) -> dict:
 class Api:
     def __init__(self, config_path: Path = RAIZ / "config.toml", segredos_path: Path = RAIZ / "segredos.toml",
                  estado_path: Path = RAIZ / "dados" / "estado.db", baixar=None,
-                 instantaneo: Path = RAIZ / "dados" / "ultima_rodada.json"):
+                 instantaneo: Path = RAIZ / "dados" / "ultima_rodada.json",
+                 localizar=shutil.which, rodar_cmd=_rodar_cmd):
         self._config_path = Path(config_path)
         self._segredos_path = Path(segredos_path)
         self._estado_path = Path(estado_path)
         self._baixar = baixar or zoom.baixar
         self._instantaneo = Path(instantaneo)
+        self._localizar, self._rodar_cmd = localizar, rodar_cmd
 
     def ofertas(self) -> dict:
         """Aba Ofertas: as melhores ofertas de cada produto na última verificação."""
         try:
             snap = json.loads(self._instantaneo.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return {"quando": "", "html": '<div class="vazio"><b>Ainda não verifiquei os preços</b>'
+            return {"quando": "", "html": self._faixa_ia() + '<div class="vazio"><b>Ainda não verifiquei os preços</b>'
                     'Clique em Verificar agora. Leva cerca de um minuto.</div>'}
         quando = datetime.fromisoformat(snap["quando"]).strftime("%d/%m às %H:%M")
-        partes, idx = [], 0
+        partes, idx = [self._faixa_ia()], 0
         for raw in _ler(self._config_path).get("itens", []):
             nome = raw.get("nome", "")
             cartoes = snap.get("itens", {}).get(nome)
@@ -206,6 +209,117 @@ class Api:
                 partes.append("</details>")
             partes.append("</section>")
         return {"quando": quando, "html": "".join(partes)}
+
+    # ---- conexões com IA (plano da pessoa ou chave de API)
+    _CLI = {
+        "claude_code": {"exe": "claude", "nome": "Claude Code", "detalhe": "Usa o seu plano Claude",
+                        "instalar": "npm install -g @anthropic-ai/claude-code", "entrar": "claude"},
+        "codex": {"exe": "codex", "nome": "Codex", "detalhe": "Usa o seu plano ChatGPT",
+                  "instalar": "npm install -g @openai/codex", "entrar": "codex login"},
+    }
+
+    def _status_salvo(self):
+        st = Estado(self._estado_path).cache_ler("ia_status")
+        return json.loads(st) if st else None
+
+    def _gravar_status(self, provedor: str, tipo: str, mensagem: str) -> None:
+        Estado(self._estado_path).cache_gravar("ia_status", json.dumps(
+            {"tipo": tipo, "mensagem": mensagem, "provedor": provedor,
+             "quando": datetime.now().isoformat(timespec="seconds")}, ensure_ascii=False))
+
+    def status_ia(self) -> dict:
+        raw, seg = _ler(self._config_path), _ler(self._segredos_path)
+        prov = raw.get("ia", {}).get("provedor", "nenhum")
+        conexoes = []
+        for id_, c in self._CLI.items():
+            exe = self._localizar(c["exe"])
+            versao = ""
+            if exe:
+                try:
+                    _, out, _ = self._rodar_cmd([exe, "--version"], "", 20, str(RAIZ))
+                    m = re.search(r"\d+(?:\.\d+)+", out or "")
+                    versao = "v" + m.group(0) if m else ""
+                except Exception:  # noqa: BLE001
+                    pass
+            conexoes.append({"id": id_, "nome": c["nome"], "detalhe": c["detalhe"], "tipo": "plano",
+                             "instalado": bool(exe), "versao": versao, "instalar": c["instalar"]})
+        conexoes.append({
+            "id": "api", "nome": "Chave de API", "detalhe": "Anthropic ou OpenAI · pago por uso", "tipo": "api",
+            "instalado": True, "versao": "", "instalar": "",
+            "provedor_api": prov if prov in ("claude", "openai") else "claude",
+            "tem_chave_claude": bool(seg.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")),
+            "tem_chave_openai": bool(seg.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")),
+            "limite_gasto_mensal": f'{raw.get("ia", {}).get("limite_gasto_mensal", 5):g}',
+        })
+        selecionado = prov if prov in self._CLI else ("api" if prov in ("claude", "openai") else "")
+        return {"selecionado": selecionado, "conexoes": conexoes, "status": self._status_salvo()}
+
+    def testar_ia(self, id_: str) -> dict:
+        inicio = time.time()
+        try:
+            if id_ in self._CLI:
+                c = self._CLI[id_]
+                exe = self._localizar(c["exe"])
+                if not exe:
+                    raise ErroIA("nao_instalado", c["nome"])
+                cls = ClaudeCode if id_ == "claude_code" else Codex
+                prov = cls(exe, "haiku" if id_ == "claude_code" else None, rodar=self._rodar_cmd, timeout=120)
+                nome_prov = id_
+            else:
+                raw = _ler(self._config_path)
+                p_api = raw.get("ia", {}).get("provedor")
+                p_api = p_api if p_api in ("claude", "openai") else "claude"
+                seg = _ler(self._segredos_path)
+                prov = criar(ConfigIA(provedor=p_api), "economica",
+                             {k: seg[k] for k in ("anthropic_api_key", "openai_api_key") if seg.get(k)})
+                if prov is None:
+                    raise ErroIA("login", NOMES[p_api], "sem chave")
+                nome_prov = p_api
+            prov.gerar("Responda só com a palavra OK.", "Teste de conexão.")
+        except Exception as e:  # noqa: BLE001
+            erro = e if isinstance(e, ErroIA) else ErroIA(classificar_erro(str(e)), NOMES.get(id_, "IA"), str(e))
+            self._gravar_status(id_, erro.tipo, erro.mensagem)
+            return {"ok": False, "tipo": erro.tipo, "mensagem": erro.mensagem}
+        msg = f"Conectado. Respondeu em {time.time() - inicio:.0f} s."
+        self._gravar_status(nome_prov, "ok", msg)
+        return {"ok": True, "tipo": "ok", "mensagem": msg}
+
+    def selecionar_ia(self, id_: str, provedor_api: str | None = None) -> dict:
+        raw = _ler(self._config_path)
+        ia = raw.setdefault("ia", {})
+        if id_ in self._CLI:
+            ia["provedor"] = id_
+        elif id_ == "api":
+            ia["provedor"] = provedor_api if provedor_api in ("claude", "openai") else "claude"
+        else:
+            ia["provedor"] = "nenhum"
+        _gravar(self._config_path, raw, CABECALHO)
+        return self.status_ia()
+
+    def _terminal(self, comando: str) -> None:
+        if os.name == "nt":
+            subprocess.Popen(["powershell", "-NoExit", "-Command", comando],
+                             creationflags=subprocess.CREATE_NEW_CONSOLE)
+
+    def instalar_ia(self, id_: str) -> str:
+        if id_ in self._CLI:
+            self._terminal(self._CLI[id_]["instalar"])
+            return "Instalação aberta numa janela do PowerShell. Quando terminar, clique em Verificar de novo."
+        return ""
+
+    def entrar_ia(self, id_: str) -> str:
+        if id_ in self._CLI:
+            self._terminal(self._CLI[id_]["entrar"])
+            return "Faça o login na janela que abriu e depois clique em Testar."
+        return ""
+
+    def _faixa_ia(self) -> str:
+        st = self._status_salvo()
+        prov = _ler(self._config_path).get("ia", {}).get("provedor", "nenhum")
+        if not st or st.get("tipo") in (None, "ok") or prov == "nenhum":
+            return ""
+        return (f'<div class="faixa {escape(st["tipo"])}"><span>{escape(st.get("mensagem", ""))}</span>'
+                '<button class="btn" data-ir="config">Ver configurações</button></div>')
 
     def abrir(self, link: str) -> None:
         if link.startswith("https://"):
@@ -287,7 +401,8 @@ class Api:
         if form.get("tema") in TEMAS:
             raw.setdefault("aparencia", {})["tema"] = form["tema"]
         ia = raw.setdefault("ia", {})
-        ia["provedor"] = form.get("provedor") if form.get("provedor") in ("claude", "openai") else "nenhum"
+        if "provedor" in form:
+            ia["provedor"] = form["provedor"] if form["provedor"] in ("claude", "openai") else "nenhum"
         if limite is not None:
             ia["limite_gasto_mensal"] = limite
         topico = (form.get("ntfy_topico") or "").strip()
@@ -296,7 +411,7 @@ class Api:
         else:
             seg.pop("ntfy_topico", None)
         chave = (form.get("chave") or "").strip()
-        if chave and ia["provedor"] != "nenhum":
+        if chave and ia.get("provedor") in ("claude", "openai"):
             seg["anthropic_api_key" if ia["provedor"] == "claude" else "openai_api_key"] = chave
         _gravar(self._config_path, raw, CABECALHO)
         _gravar(self._segredos_path, seg, "# Seus dados. NÃO vai para o git.\n\n")
@@ -419,6 +534,38 @@ details .grade{display:flex;flex-direction:column;gap:14px}
 .junto input{flex:1}
 footer{padding:12px 24px 16px;border-top:1px solid var(--borda);display:flex;align-items:center;gap:12px}
 footer .status{flex:1;color:var(--suave);font-size:12.5px}
+.ia-cab{display:flex;align-items:center;gap:12px}
+.ia-icone{width:30px;height:30px;border-radius:8px;background:var(--normal-bg);color:var(--texto);display:grid;place-items:center;flex:none}
+.ia-cab h3{flex:1}
+.link{background:none;border:0;color:var(--texto);font-weight:600;font-size:13px;padding:4px 2px}
+.link:hover{color:var(--acento)}
+.conexoes{display:flex;flex-direction:column;gap:8px}
+.conexao{display:grid;grid-template-columns:auto 1fr auto;gap:2px 14px;align-items:center;border:1px solid var(--borda);
+  border-radius:12px;padding:14px 16px;background:var(--cartao);transition:border-color .15s,box-shadow .15s}
+.conexao.sel{border-color:var(--acento);box-shadow:0 0 0 1px var(--acento)}
+.caixa{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--borda-forte);background:transparent;
+  display:grid;place-items:center;color:transparent;padding:0}
+.caixa:disabled{opacity:.4;cursor:not-allowed}
+.sel .caixa{background:var(--acento);border-color:var(--acento);color:var(--acento-texto)}
+.caixa svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.cx-info b{display:block;font-size:14.5px;font-weight:650}
+.cx-info span{color:var(--suave);font-size:12.5px}
+.cx-acoes{display:flex;align-items:center;gap:8px}
+.selo{font-size:11.5px;font-weight:650;padding:2px 8px;border-radius:6px;background:var(--bom-bg);color:var(--bom-tx)}
+.cx-extra{grid-column:2/4;margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.cx-dica{color:var(--suave);font-size:12px}
+.codigo{display:flex;align-items:center;gap:8px;background:var(--fundo);border:1px solid var(--borda);border-radius:8px;padding:8px 8px 8px 12px}
+.codigo code{flex:1;font:12.5px/1.4 "Cascadia Mono",Consolas,monospace;overflow-x:auto;white-space:nowrap}
+.cx-status{font-size:12.5px;border-radius:8px;padding:8px 10px}
+.cx-status.ok{background:var(--bom-bg);color:var(--bom-tx)}
+.cx-status.limite{background:var(--alto-bg);color:var(--alto-tx)}
+.cx-status.login,.cx-status.conexao,.cx-status.outro,.cx-status.nao_instalado{background:var(--muito-bg);color:var(--muito-tx)}
+.cx-status.testando{background:var(--normal-bg);color:var(--normal-tx)}
+.faixa{display:flex;align-items:center;gap:12px;border-radius:10px;padding:10px 12px 10px 14px;margin-bottom:16px;font-size:13px}
+.faixa span{flex:1}
+.faixa.limite{background:var(--alto-bg);color:var(--alto-tx)}
+.faixa.login,.faixa.conexao,.faixa.outro,.faixa.nao_instalado{background:var(--muito-bg);color:var(--muito-tx)}
+.faixa .btn{color:inherit;border-color:currentColor;padding:5px 12px;font-size:12.5px}
 .sk{display:block;background:var(--borda);border-radius:6px;animation:pulso 1.2s ease-in-out infinite}
 @keyframes pulso{50%{opacity:.45}}
 .sk-cartao+.sk-cartao{margin-top:12px}
@@ -475,15 +622,7 @@ function render(){
     </article>`).join('')
     : '<div class="vazio"><b>Nada sendo monitorado</b>Adicione o primeiro produto para começar.</div>';
   const g = D.geral;
-  $('#g-ntfy').value = g.ntfy_topico; $('#g-limite').value = g.limite_gasto_mensal;
-  seg('provedor', g.provedor); atualizarChave();
-}
-
-function atualizarChave(){
-  const p = segValor('provedor'), g = D.geral;
-  $('#bloco-chave').classList.toggle('oculto', p === 'nenhum');
-  const tem = p === 'claude' ? g.tem_chave_claude : g.tem_chave_openai;
-  $('#g-chave').placeholder = tem ? 'Chave já salva (deixe em branco para manter)' : (p === 'claude' ? 'sk-ant-...' : 'sk-...');
+  $('#g-ntfy').value = g.ntfy_topico;
 }
 
 function abrirForm(i){
@@ -522,10 +661,9 @@ async function salvarForm(ev){
 async function salvarGeral(ev){
   ev.preventDefault();
   if (!api()) return;
-  const r = await api().salvar_geral({ntfy_topico: $('#g-ntfy').value, provedor: segValor('provedor'),
-    chave: $('#g-chave').value, limite_gasto_mensal: $('#g-limite').value, tema: raiz.dataset.tema});
+  const r = await api().salvar_geral({ntfy_topico: $('#g-ntfy').value, tema: raiz.dataset.tema});
   if (!r.ok) { status(r.erro); return; }
-  $('#g-chave').value = ''; D = r.dados; render(); status('Configurações salvas.');
+  D = r.dados; render(); status('Configurações salvas.');
 }
 
 document.addEventListener('click', async e => {
@@ -533,6 +671,7 @@ document.addEventListener('click', async e => {
   if (t) { raiz.dataset.tema = t.dataset.escolha; marcarTema(); if (api()) api().salvar_tema(t.dataset.escolha); }
   const aba = e.target.closest('[data-aba]');
   if (aba) { document.querySelectorAll('[data-aba]').forEach(b => b.setAttribute('aria-selected', b === aba));
+    if (aba.dataset.aba === 'config' && !IA) carregarIA();
     for (const a of ['ofertas','produtos','config']) { const s = $('#aba-' + a);
       s.classList.toggle('oculto', aba.dataset.aba !== a); s.classList.remove('entrar');
       if (aba.dataset.aba === a) { void s.offsetWidth; s.classList.add('entrar'); } }
@@ -540,7 +679,7 @@ document.addEventListener('click', async e => {
   const sb = e.target.closest('.seg button');
   if (sb) { e.preventDefault(); seg(sb.parentElement.dataset.grupo, sb.dataset.v);
     if (sb.parentElement.dataset.grupo === 'pesquisa') atualizarIA();
-    if (sb.parentElement.dataset.grupo === 'provedor') atualizarChave(); }
+  }
   const ed = e.target.closest('[data-editar]'); if (ed) abrirForm(+ed.dataset.editar);
   const ex = e.target.closest('[data-excluir]');
   if (ex) { if (ex.dataset.conf) { const r = await api().excluir_item(+ex.dataset.excluir); D = r.dados; render(); status('Produto excluído.'); }
@@ -548,6 +687,23 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#adicionar')) abrirForm(null);
   if (e.target.closest('#cancelar')) fecharForm();
   const lk = e.target.closest('[data-link]'); if (lk && api()) api().abrir(lk.dataset.link);
+  const ir = e.target.closest('[data-ir]'); if (ir) document.querySelector(`[data-aba="${ir.dataset.ir}"]`).click();
+  if (e.target.closest('#verificar-ia')) { testes = {}; carregarIA(); }
+  const sl = e.target.closest('[data-selecionar]');
+  if (sl && api() && !sl.disabled) { const id = IA.selecionado === sl.dataset.selecionar ? '' : sl.dataset.selecionar;
+    if (id === 'api') { abertoApi = true; IA.selecionado = 'api'; renderIA(); }
+    else { IA = await api().selecionar_ia(id, null); renderIA(); status(id ? 'IA selecionada.' : 'Pesquisa com IA desligada.'); } }
+  const ti = e.target.closest('[data-testar-ia]');
+  if (ti && api()) { const id = ti.dataset.testarIa; testes[id] = {tipo: 'testando', mensagem: 'Testando… pode levar alguns segundos.'};
+    renderIA(); testes[id] = await api().testar_ia(id); renderIA(); }
+  const ins = e.target.closest('[data-instalar]'); if (ins && api()) status(await api().instalar_ia(ins.dataset.instalar));
+  const ent = e.target.closest('[data-entrar]'); if (ent && api()) status(await api().entrar_ia(ent.dataset.entrar));
+  const cp = e.target.closest('[data-copiar]'); if (cp) { navigator.clipboard.writeText(cp.dataset.copiar); cp.textContent = 'Copiado'; }
+  if (e.target.closest('[data-configurar-api]')) { abertoApi = !abertoApi; renderIA(); }
+  if (e.target.closest('[data-salvar-api]') && api()) { const prov = segValor('provedor') || 'claude';
+    const r = await api().salvar_geral({provedor: prov, chave: $('#g-chave').value, limite_gasto_mensal: $('#g-limite').value});
+    if (!r.ok) { status(r.erro); return; }
+    IA = await api().selecionar_ia('api', prov); abertoApi = false; renderIA(); status('Chave salva. Clique em Testar para conferir.'); }
   if (e.target.closest('#verificar') && api()) { status(await api().verificar_agora()); acompanhar(); }
   if (e.target.closest('#testar') && api()) status(await api().testar_aviso());
 });
@@ -555,7 +711,43 @@ $('#form-item').addEventListener('submit', salvarForm);
 $('#form-geral').addEventListener('submit', salvarGeral);
 marcarTema();
 
-let ultimo = null;
+let ultimo = null, IA = null, testes = {}, abertoApi = false;
+const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>';
+function rowIA(c){
+  const sel = IA.selecionado === c.id, t = testes[c.id] ||
+    (IA.status && IA.status.provedor === (c.id === 'api' ? c.provedor_api : c.id) ? IA.status : null);
+  let acoes = '', extra = '';
+  if (c.tipo === 'plano' && t && t.tipo === 'ok') acoes += '<span class="selo">plano</span>';
+  if (!c.instalado) acoes += `<button class="btn" data-instalar="${c.id}">Instalar</button>`;
+  else if (c.tipo === 'api') acoes += `<button class="btn" data-configurar-api>${abertoApi ? 'Fechar' : 'Configurar'}</button>`;
+  else if (t && t.tipo === 'login') acoes += `<button class="btn primario" data-entrar="${c.id}">Entrar</button>`;
+  if (c.instalado) acoes += `<button class="btn" data-testar-ia="${c.id}">Testar</button>`;
+  if (t && t.tipo) extra += `<p class="cx-status ${esc(t.tipo)}">${esc(t.mensagem)}</p>`;
+  if (!c.instalado) extra += `<p class="cx-dica">Ou cole no PowerShell:</p>
+    <div class="codigo"><code>${esc(c.instalar)}</code><button class="btn" data-copiar="${esc(c.instalar)}">Copiar</button></div>`;
+  if (c.tipo === 'api' && abertoApi) {
+    const tem = c.provedor_api === 'claude' ? c.tem_chave_claude : c.tem_chave_openai;
+    extra += `<div class="campo"><span class="rotulo">Provedor</span><div class="seg" data-grupo="provedor">
+        <button type="button" data-v="claude" aria-pressed="${c.provedor_api === 'claude'}">Anthropic (Claude)</button>
+        <button type="button" data-v="openai" aria-pressed="${c.provedor_api === 'openai'}">OpenAI</button></div></div>
+      <div class="campo"><label for="g-chave">Chave da API</label><input id="g-chave" type="password" autocomplete="off"
+        placeholder="${tem ? 'Chave já salva (deixe em branco para manter)' : 'Cole a chave aqui'}"></div>
+      <div class="campo"><label for="g-limite">Gasto máximo por mês (US$)</label><input id="g-limite" inputmode="decimal"
+        value="${esc(c.limite_gasto_mensal)}"><small>Ao chegar nele, a IA pausa até o mês virar.</small></div>
+      <div class="botoes"><button class="btn primario" data-salvar-api>Salvar e usar</button></div>`;
+  }
+  const versao = c.versao ? ' · ' + esc(c.versao) : '';
+  return `<div class="conexao${sel ? ' sel' : ''}">
+    <button class="caixa" data-selecionar="${c.id}" aria-pressed="${sel}" aria-label="Usar ${esc(c.nome)}"
+      ${c.instalado ? '' : 'disabled'}>${CHECK}</button>
+    <div class="cx-info"><b>${esc(c.nome)}</b><span>${c.instalado ? esc(c.detalhe) + versao : 'Não instalado'}</span></div>
+    <div class="cx-acoes">${acoes}</div>${extra ? `<div class="cx-extra">${extra}</div>` : ''}</div>`;
+}
+function renderIA(){ if (IA) $('#conexoes-ia').innerHTML = IA.conexoes.map(rowIA).join(''); }
+async function carregarIA(){
+  $('#conexoes-ia').innerHTML = '<div class="cartao sk-cartao"><span class="sk sk-l2"></span></div>'.repeat(3);
+  IA = api() ? await api().status_ia() : window.IA_DEMO; renderIA();
+}
 async function carregarOfertas(){
   const r = api() ? await api().ofertas() : window.OFERTAS_DEMO; if (!r) return r;
   const o = $('#ofertas'); o.innerHTML = r.html; o.classList.remove('entrar'); void o.offsetWidth; o.classList.add('entrar');
@@ -592,7 +784,8 @@ def _campo(id_: str, rotulo: str, dica: str = "", tipo: str = "input", ph: str =
             + (f"<small>{escape(dica)}</small>" if dica else "") + "</div>")
 
 
-def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo: dict | None = None) -> str:
+def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo: dict | None = None,
+                  ia_demo: dict | None = None) -> str:
     tema = tema if tema in TEMAS else "sistema"
     seletor = "".join(
         f'<button data-escolha="{t}" aria-label="{r}" title="{r}">'
@@ -635,18 +828,20 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
         '<div class="campo"><label for="g-ntfy">Canal do ntfy</label><div class="junto">'
         '<input id="g-ntfy" placeholder="Ex.: precos-k7x9q2" autocomplete="off">'
         '<button type="button" class="btn" id="testar">Enviar teste</button></div>'
-        "<small>Use um nome difícil de adivinhar: quem souber o nome lê os avisos.</small></div></div>"
-        '<div class="secao"><h3>Pesquisa com IA</h3>'
-        '<div class="campo"><span class="rotulo">Provedor</span>'
-        + _seg("provedor", (("nenhum", "Nenhum"), ("claude", "Claude"), ("openai", "OpenAI")))
-        + '</div><div id="bloco-chave" class="campo"><label for="g-chave">Chave da API</label>'
-        '<input id="g-chave" type="password" autocomplete="off"></div>'
-        '<div class="campo"><label for="g-limite">Gasto máximo por mês (US$)</label>'
-        '<input id="g-limite" inputmode="decimal" placeholder="5"><small>Ao chegar nele, a IA pausa até o mês virar.</small></div></div>'
-        '<div class="botoes"><button type="submit" class="btn primario">Salvar configurações</button></div></form>'
+        "<small>Use um nome difícil de adivinhar: quem souber o nome lê os avisos.</small></div>"
+        '<div class="botoes"><button type="submit" class="btn primario">Salvar</button></div></div></form>'
+        '<section class="cartao secao" style="margin-top:14px">'
+        '<div class="ia-cab"><span class="ia-icone"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'
+        '<path d="m4 17 6-6-6-6M12 19h8"/></svg></span><h3>Pesquisa com IA</h3>'
+        '<button type="button" class="link" id="verificar-ia">Verificar de novo</button></div>'
+        '<p class="dica" style="margin-top:0">A IA descarta produtos ruins e lê avaliações. Use o plano que você já '
+        'paga (Claude ou ChatGPT), pelo programa instalado no seu PC, ou uma chave de API. O monitor nunca vê a sua '
+        'senha: quem faz o login é o próprio programa.</p>'
+        '<div id="conexoes-ia" class="conexoes"></div></section>'
     )
     demo_js = (f"<script>window.DADOS_DEMO={json.dumps(demo, ensure_ascii=False)};"
-               f"window.OFERTAS_DEMO={json.dumps(ofertas_demo, ensure_ascii=False)};</script>") if demo else ""
+               f"window.OFERTAS_DEMO={json.dumps(ofertas_demo, ensure_ascii=False)};"
+               f"window.IA_DEMO={json.dumps(ia_demo, ensure_ascii=False)};</script>") if demo else ""
     return (
         f'<!doctype html><html lang="pt-BR" data-tema="{tema}"><head><meta charset="utf-8">'
         f"<title>Monitor de preços</title><style>{CSS}</style></head><body>"

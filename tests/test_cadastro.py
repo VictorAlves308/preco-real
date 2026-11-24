@@ -159,3 +159,66 @@ def test_app_abre_com_skeleton():
 def test_cor_de_fundo_inicial():
     from precos.cadastro import cor_fundo
     assert cor_fundo("escuro") == "#161615" and cor_fundo("claro") == "#F6F5F2"
+
+
+def _api_ia(tmp_path, localizar, runner=None):
+    (tmp_path / "config.toml").write_text('[ia]\nprovedor = "codex"\n', encoding="utf-8")
+    return Api(tmp_path / "config.toml", tmp_path / "s.toml", tmp_path / "e.db", instantaneo=tmp_path / "u.json",
+               localizar=localizar, rodar_cmd=runner or (lambda cmd, entrada, timeout, cwd: (0, "codex-cli 9.9", "")))
+
+
+def test_status_ia_lista_conexoes(tmp_path):
+    api = _api_ia(tmp_path, lambda n: "C:/bin/codex.cmd" if n == "codex" else None)
+    st = api.status_ia()
+    assert st["selecionado"] == "codex"
+    por_id = {c["id"]: c for c in st["conexoes"]}
+    assert por_id["codex"]["instalado"] and "9.9" in por_id["codex"]["versao"]
+    assert not por_id["claude_code"]["instalado"]
+    assert por_id["claude_code"]["instalar"] == "npm install -g @anthropic-ai/claude-code"
+    assert por_id["api"]["tipo"] == "api"
+
+
+def test_testar_ia_ok_e_limite(tmp_path):
+    import json as _json
+    resp = {"r": (0, _json.dumps({"is_error": False, "result": "OK"}), "")}
+    api = _api_ia(tmp_path, lambda n: f"C:/bin/{n}.cmd", lambda cmd, entrada, timeout, cwd: resp["r"])
+    r = api.testar_ia("claude_code")
+    assert r["ok"] and r["tipo"] == "ok" and r["mensagem"].startswith("Conectado")
+    resp["r"] = (1, _json.dumps({"is_error": True, "result": "Claude AI usage limit reached"}), "")
+    r = api.testar_ia("claude_code")
+    assert not r["ok"] and r["tipo"] == "limite"
+    assert api.status_ia()["status"]["tipo"] == "limite"
+
+
+def test_testar_ia_nao_instalado(tmp_path):
+    r = _api_ia(tmp_path, lambda n: None).testar_ia("claude_code")
+    assert r == {"ok": False, "tipo": "nao_instalado", "mensagem": "Claude Code não está instalado neste PC."}
+
+
+def test_selecionar_ia(tmp_path):
+    api = _api_ia(tmp_path, lambda n: None)
+    api.selecionar_ia("claude_code")
+    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").ia.provedor == "claude_code"
+    api.selecionar_ia("")
+    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").ia.provedor == "nenhum"
+
+
+def test_salvar_geral_sem_provedor_nao_mexe_na_ia(tmp_path):
+    api = _api_ia(tmp_path, lambda n: None)
+    api.salvar_geral({"ntfy_topico": "precos-x"})
+    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").ia.provedor == "codex"
+
+
+def test_faixa_de_erro_da_ia_nas_ofertas(tmp_path):
+    import json as _json
+    from precos.estado import Estado
+    api = _api_ia(tmp_path, lambda n: None)
+    Estado(tmp_path / "e.db").cache_gravar("ia_status", _json.dumps(
+        {"tipo": "limite", "mensagem": "Codex: o limite de uso do seu plano acabou.", "provedor": "codex"}))
+    html = api.ofertas()["html"]
+    assert 'class="faixa limite"' in html and "limite de uso do seu plano" in html and 'data-ir="config"' in html
+
+
+def test_html_conexoes_ia():
+    html = html_cadastro()
+    assert 'id="conexoes-ia"' in html and 'id="verificar-ia"' in html

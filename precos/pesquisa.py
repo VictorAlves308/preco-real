@@ -8,11 +8,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from urllib.parse import quote
 
 from .config import Config, Item
 from .estado import Estado
+from .ia import NOMES, ErroIA, classificar_erro
 
 log = logging.getLogger(__name__)
 
@@ -62,10 +63,25 @@ class Pesquisador:
         try:
             r = prov.gerar(SISTEMA, prompt, web=web)
         except Exception as e:  # noqa: BLE001 - IA nunca derruba a rodada
-            log.warning("IA falhou: %s", e)
+            erro = e if isinstance(e, ErroIA) else ErroIA(
+                classificar_erro(str(e)), NOMES.get(self.cfg.ia.provedor, "IA"), str(e))
+            log.warning("IA falhou (%s): %s", erro.tipo, erro.detalhe or erro.mensagem)
+            self._status(erro.tipo, erro.mensagem)
+            if erro.tipo in ("limite", "login") and self.notificar:
+                chave = f"ia_avisado:{erro.tipo}:{date.today().isoformat()}"
+                if not self.estado.cache_ler(chave):  # no máximo um aviso por dia
+                    self.estado.cache_gravar(chave, "1")
+                    self.notificar(erro.mensagem)
             return None
+        self._status("ok", "")
         self.estado.somar_gasto(self.mes, r.custo)
         return r.texto
+
+    def _status(self, tipo: str, mensagem: str) -> None:
+        """Última situação da IA, mostrada no app (faixa de aviso e Configurações)."""
+        self.estado.cache_gravar("ia_status", json.dumps(
+            {"tipo": tipo, "mensagem": mensagem, "provedor": self.cfg.ia.provedor,
+             "quando": datetime.now().isoformat(timespec="seconds")}, ensure_ascii=False))
 
     # ---- recursos ----
     def buscas_para(self, item: Item) -> list[str]:
