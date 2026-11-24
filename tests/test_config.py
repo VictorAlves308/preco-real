@@ -9,7 +9,7 @@ def test_carrega_exemplo():
     cfg = carregar(RAIZ / "config.exemplo.toml", RAIZ / "segredos.exemplo.toml")
     assert len(cfg.itens) == 3
     cpu = next(i for i in cfg.itens if i.nome == "Ryzen 7 5700X")
-    assert cpu.tipo == "produto"
+    assert cpu.tipo == "busca" and cpu.url.endswith("ryzen%207%205700x")
     tv = next(i for i in cfg.itens if i.nome == "TV 32-40")
     assert tv.limite_total == 1500.0
     assert len(tv.urls) == 1

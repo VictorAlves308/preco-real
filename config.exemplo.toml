@@ -1,56 +1,47 @@
-# Copie este arquivo para config.toml e ajuste.
-#
-# Aparência da janela de aviso (também dá para trocar no topo da própria janela).
+# Exemplo de configuração. O jeito mais fácil é usar o app (python -m precos --cadastro):
+# ele cria e edita o config.toml para você. Se preferir editar à mão, copie este arquivo
+# para config.toml.
+
+# Aparência da janela de aviso (também dá para trocar no topo do app).
 # [aparencia]
 # tema = "sistema"   # "sistema", "claro" ou "escuro"
 
-# IA (opcional): escolha o provedor e quanto pode gastar por mês.
+# IA (opcional). No app: Configurações → Pesquisa com IA.
 # [ia]
-# provedor = "claude"            # "claude", "openai" ou "nenhum"
-# limite_gasto_mensal = 5        # em dólares; ao atingir, volta às regras fixas até o mês virar
-# modelo_economico = "..."       # opcional (padrão: claude-haiku-5-5 / gpt-5-mini)
-# modelo_completo = "..."        # opcional (padrão: claude-opus-5-5 / gpt-5)
-# preco_entrada = 1.0            # opcional: US$ por 1 milhão de tokens, para modelos fora da tabela
-# preco_saida = 4.0
+# conexoes = ["claude_code", "codex"]  # em ordem: se o limite do plano acabar na 1ª, usa a próxima
+#                                      # "claude_code" e "codex" usam o plano que você já paga, pelo programa
+#                                      # instalado; "claude" e "openai" usam chave de API (pago por uso)
+# limite_gasto_mensal = 5              # em dólares, só para chave de API
+# [ia.modelos.claude_code]
+# economica = "haiku"                  # haiku, sonnet ou opus (vazio = padrão do programa)
 
 # Cada [[itens]] é uma coisa que você quer comprar.
 #   nome          nome que aparece no aviso
-#   url           página do Zoom (www.zoom.com.br): de um produto ou de uma busca
-#   urls          buscas extras para o mesmo item (opcional, só tipo "busca")
-#   tipo          "produto" (url de um produto específico) ou "busca" (url de busca/categoria)
-#   modo          "promocao"   = só avisa promoção de verdade (ou oferta sem histórico)
+#   buscas        o que você digitaria numa loja (pode ser mais de uma). Não precisa de link:
+#                 o monitor busca no Zoom e também descobre sozinho a categoria certa, com filtro
+#                 e do mais barato ao mais caro, para achar produtos com histórico de preço.
+#   modo          "promocao"    = só avisa promoção de verdade (ou oferta sem histórico)
 #                 "mais_barato" = também avisa quando aparece o menor preço já visto
 #   limite_total  preço máximo, considerando o TOTAL PARCELADO no cartão (opcional)
 #   polegadas_min / polegadas_max   tamanho da tela (opcional)
 #   hz_min        taxa de atualização mínima, para monitores (opcional)
 #   marcas        só aceita estas marcas (vazio = qualquer uma)
-#   exigir        palavras que precisam estar no nome
+#   exigir        palavras que precisam estar no nome (ex.: o código do modelo)
 #   excluir       palavras que eliminam o anúncio
 #   ordem         "menor_preco" (padrão) = o mais barato primeiro
 #                 "parcelas"    = ofertas em 10x ou mais primeiro, depois o mais barato
-#   pesquisa      uso de IA (precisa da seção [ia] e de uma chave em segredos.toml):
-#                 "nenhuma"   = só as regras acima (padrão, custo zero)
-#                 "economica" = a IA monta buscas a partir da descricao e descarta produtos ruins (centavos/mês)
-#                 "completa"  = além disso, pesquisa avaliações na web de cada finalista e dá nota/veto
-#   descricao     o que você quer, em texto livre (ex.: "air fryer boa até 500, fácil de limpar").
-#                 Com pesquisa ligada, um item pode ter só nome + descricao, sem url.
+#   pesquisa      uso de IA: "nenhuma" (padrão), "economica" ou "completa"
+#   descricao     o que você quer, em texto livre (usado pela IA)
 
 [[itens]]
 nome = "Ryzen 7 5700X"
-url = "https://www.zoom.com.br/processador/processador-amd-ryzen-7-5700x-3-4ghz-4-6ghz-turbo-am4"
-tipo = "produto"
+buscas = ["ryzen 7 5700x"]
+exigir = ["5700X"]          # palavra inteira: não pega o 5700X3D
 modo = "mais_barato"
 
 [[itens]]
 nome = "Monitor 144Hz"
-url = "https://www.zoom.com.br/search?q=monitor%20144hz"
-urls = [
-  "https://www.zoom.com.br/search?q=monitor%20gamer%20144hz%20ips",
-  "https://www.zoom.com.br/search?q=monitor%20aoc%20144hz",
-  "https://www.zoom.com.br/search?q=monitor%20lg%20ultragear%20144hz",
-  "https://www.zoom.com.br/search?q=monitor%20samsung%20odyssey%20144hz",
-]
-tipo = "busca"
+buscas = ["monitor 144hz", "monitor gamer ips"]
 modo = "mais_barato"
 polegadas_min = 23.8
 polegadas_max = 27
@@ -60,9 +51,7 @@ excluir = ["TN", "Portátil", "Portatil"]
 
 [[itens]]
 nome = "TV 32-40"
-url = "https://www.zoom.com.br/search?q=smart%20tv%2032"
-urls = ["https://www.zoom.com.br/search?q=smart%20tv%2040"]
-tipo = "busca"
+buscas = ["smart tv 32", "smart tv 40"]
 modo = "promocao"
 limite_total = 1500
 polegadas_min = 32
