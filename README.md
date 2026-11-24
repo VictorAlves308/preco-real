@@ -54,6 +54,7 @@ Cada bloco `[[itens]]` é um produto. Os campos estão explicados no próprio ar
 ```powershell
 .venv\Scripts\python.exe -m precos                # uma verificação agora
 powershell -ExecutionPolicy Bypass -File instalar_tarefa.ps1    # agenda: ao entrar no Windows e a cada 3h
+powershell -ExecutionPolicy Bypass -File instalar_tarefa.ps1 -Minutos 30  # mais frequente (ex.: Black Friday; mínimo 30)
 powershell -ExecutionPolicy Bypass -File desinstalar_tarefa.ps1 # remove o agendamento
 ```
 
@@ -68,7 +69,7 @@ O log fica em `dados/precos.log`. O programa roda com prioridade baixa e espera 
 
 ## Uso responsável
 
-Este projeto é para **uso pessoal**. Ele lê páginas públicas em baixa frequência (a cada 3 horas). Não diminua esse intervalo e não use o projeto para coletar dados em massa. Os termos de uso dos sites continuam valendo.
+Este projeto é para **uso pessoal**. Ele lê páginas públicas em baixa frequência (a cada 3 horas por padrão; no mínimo 30 minutos). Não diminua mais que isso e não use o projeto para coletar dados em massa. Os termos de uso dos sites continuam valendo.
 
 ## Licença
 
