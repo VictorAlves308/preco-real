@@ -66,11 +66,16 @@ def _candidatos(item: Item, baixar, hoje: date, dormir):
     return out
 
 
+def _chave(item: Item, o: Oferta):
+    if item.ordem == "parcelas":  # 10x ou mais primeiro, depois o mais barato
+        return ((o.parcelas or 0) < 10, o.total_parcelado)
+    return (o.total_parcelado,)  # menor_preco (padrão)
+
+
 def _escolher(item: Item, cands, estado: Estado) -> list[Achado]:
     menor = estado.menor_visto(item.nome)
     escolhidos, vistos = [], set()
-    # Entre produtos diferentes vale o mais barato; dentro de um produto, 10x vem primeiro (ordenar).
-    for o, v, tags in sorted(cands, key=lambda c: c[0].total_parcelado):
+    for o, v, tags in sorted(cands, key=lambda c: _chave(item, c[0])):
         if o.offer_id in vistos or v == "maquiada":
             continue
         # Só "real" passa direto. "sem_historico" e "normal" só avisam se forem mais baratos que

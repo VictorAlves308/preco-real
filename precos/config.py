@@ -21,6 +21,7 @@ class Item:
     exigir: list[str] = field(default_factory=list)
     excluir: list[str] = field(default_factory=list)
     urls: list[str] = field(default_factory=list)  # buscas extras (tipo busca)
+    ordem: Literal["menor_preco", "parcelas"] = "menor_preco"  # parcelas = 10x+ primeiro
 
 
 @dataclass

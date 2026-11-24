@@ -13,6 +13,8 @@
 #   marcas        só aceita estas marcas (vazio = qualquer uma)
 #   exigir        palavras que precisam estar no nome
 #   excluir       palavras que eliminam o anúncio
+#   ordem         "menor_preco" (padrão) = o mais barato primeiro
+#                 "parcelas"    = ofertas em 10x ou mais primeiro, depois o mais barato
 
 [[itens]]
 nome = "Ryzen 7 5700X"

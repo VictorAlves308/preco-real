@@ -38,6 +38,8 @@ Cada bloco `[[itens]]` é um produto. Os campos estão explicados no próprio ar
 - **`tipo = "busca"`:** faça a busca no zoom.com.br e cole o endereço da busca. Para cobrir mais anúncios, coloque buscas extras em `urls`. Depois use os filtros (`marcas`, `polegadas_min`, `hz_min`, `exigir`, `excluir`) para tirar o que não presta.
 - **`modo = "mais_barato"`:** avisa também quando aparece o menor preço já visto.
 - **`modo = "promocao"`:** só avisa promoção real ou oferta sem histórico.
+- **`ordem = "menor_preco"`** (padrão): no aviso, o mais barato vem primeiro.
+- **`ordem = "parcelas"`:** ofertas em 10x ou mais vêm primeiro e, entre elas, a mais barata.
 
 ### `segredos.toml`: seus dados (não vai para o git)
 - **`ntfy_topico`:** o nome do seu canal de avisos. Escolha algo difícil de adivinhar, como `precos-k7x9q2m4ab`, porque quem souber o nome consegue ler os avisos.

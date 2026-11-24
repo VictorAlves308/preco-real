@@ -122,3 +122,26 @@ def test_avisar_todos_informa_resultado(monkeypatch):
     o = Oferta("1", "n", "l", 1.0, 1.0, 10, 0.1, True, False, "http://x")
     res = r.avisar_todos(Config(itens=[]))([Achado("i", o, "real", [])])
     assert res == {"janela": True, "ntfy": False, "whatsapp": False}
+
+
+def _item_ordem(ordem, url):
+    return Item(nome="Monitor", url=url, tipo="busca", modo="mais_barato", polegadas_min=23.8,
+                polegadas_max=27, hz_min=144, marcas=["LG", "Philips", "Gigabyte", "ASUS"], ordem=ordem)
+
+
+def test_ordem_menor_preco_padrao(tmp_path):
+    url = "https://www.zoom.com.br/search?q=m"
+    est = estado("zoom_busca_monitor.json")
+    achados = _rodar([_item_ordem("menor_preco", url)], {url: html_de(est)}, tmp_path, Avisar())
+    assert [a.oferta.total_parcelado for a in achados] == [874.79, 876.82, 895.44]
+
+
+def test_ordem_parcelas_10x_primeiro(tmp_path):
+    url = "https://www.zoom.com.br/search?q=m"
+    est = copy.deepcopy(estado("zoom_busca_monitor.json"))
+    for h in est["hits"]["hits"]:
+        if "Evnia 27" in h["name"]:
+            h["installments"] = {"amount_months": 10, "price": 105.39, "total_value": 1053.92}
+    achados = _rodar([_item_ordem("parcelas", url)], {url: html_de(est)}, tmp_path, Avisar())
+    assert achados[0].oferta.parcelas == 10
+    assert "Evnia 27" in achados[0].oferta.nome
