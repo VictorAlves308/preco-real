@@ -173,7 +173,7 @@ def main(caminho: str) -> None:
         try:  # janela em HTML (Edge WebView2); se não der, cai para a versão tkinter
             from . import janela_web
 
-            janela_web.mostrar(dados["titulo"], itens, f"{datetime.now():%H:%M}")
+            janela_web.mostrar(dados["titulo"], itens, f"{datetime.now():%H:%M}", dados.get("tema", "sistema"))
             return
         except Exception:  # noqa: BLE001
             pass

@@ -62,6 +62,7 @@ def dados_janela(achados: list[Achado]) -> list[dict]:
             "rotulo": ROTULOS_JANELA.get(a.veredito, a.veredito), "tags": list(a.tags),
             "frete": _frete(a.oferta.loja), "link": a.oferta.link, "imagem": a.oferta.imagem,
             "historico": list(a.historico[-90:]),
+            "vista_num": a.oferta.preco_vista,
             "minimo": moeda(min(a.historico)) if a.historico else "",
             "mediana": moeda(median(a.historico)) if a.historico else "",
         }
@@ -122,11 +123,13 @@ def enviar_whatsapp(cfg: Config, corpo: str, sessao=None) -> bool:
         return False
 
 
-def abrir_janela(titulo: str, corpo: str, links: list[str], itens: list[dict] | None = None) -> None:
+def abrir_janela(titulo: str, corpo: str, links: list[str], itens: list[dict] | None = None,
+                 tema: str = "sistema") -> None:
     """Abre a janela em outro processo, para a rodada não ficar presa esperando fechar."""
     fd, caminho = tempfile.mkstemp(suffix=".json", prefix="precos_")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump({"titulo": titulo, "corpo": corpo, "links": links, "itens": itens or []}, f, ensure_ascii=False)
+        json.dump({"titulo": titulo, "corpo": corpo, "links": links, "itens": itens or [], "tema": tema}, f,
+                  ensure_ascii=False)
     exe = Path(sys.executable)
     pyw = exe.with_name("pythonw.exe")
     flags = 0

@@ -14,7 +14,7 @@ def test_um_cartao_por_oferta():
     assert html.count('class="cartao"') == 2
     assert html.count("<svg") == 1  # só quem tem histórico ganha gráfico
     assert "Verificado às 12:56" in html
-    assert "mín. R$ 679,00" in html
+    assert "Menor <b>R$ 679,00</b>" in html
 
 
 def test_escapa_texto():
@@ -28,3 +28,31 @@ def test_sparkline():
     assert svg.startswith("<svg") and svg.count(",") >= 3
     assert sparkline([], 200, 40) == ""
     assert sparkline([5.0, 5.0], 200, 40).startswith("<svg")  # linha reta não divide por zero
+
+
+def test_sparkline_colorido_com_marcadores():
+    svg = sparkline([900.0, 700.0, 1000.0, 800.0], 400, 60)
+    assert svg.count("<clipPath") == 2          # linha verde abaixo da mediana, laranja acima
+    assert 'class="m-min"' in svg and 'class="m-hoje"' in svg
+
+
+def test_legenda_do_grafico():
+    html = html_janela("t", [ITEM], "00:00")
+    assert "Hoje" in html and "Menor" in html and "Mediana" in html
+
+
+def test_tema_escolhido():
+    for tema in ("sistema", "claro", "escuro"):
+        assert f'<html lang="pt-BR" data-tema="{tema}">' in html_janela("t", [ITEM], "00:00", tema)
+    assert '<html lang="pt-BR" data-tema="sistema">' in html_janela("t", [ITEM], "00:00", "roxo")
+    assert 'data-escolha="escuro"' in html_janela("t", [ITEM], "00:00")  # seletor no topo
+
+
+def test_preferencia_de_tema(tmp_path):
+    from precos.janela_web import ler_tema, salvar_tema
+    arq = tmp_path / "pref.json"
+    assert ler_tema(arq, "claro") == "claro"
+    salvar_tema(arq, "escuro")
+    assert ler_tema(arq, "claro") == "escuro"
+    salvar_tema(arq, "invalido")
+    assert ler_tema(arq, "claro") == "escuro"

@@ -46,6 +46,7 @@ class Config:
     callmebot_apikey: str | None = None
     ia: ConfigIA = field(default_factory=ConfigIA)
     chaves: dict = field(default_factory=dict)  # anthropic_api_key, openai_api_key
+    tema: str = "sistema"  # janela de aviso: sistema | claro | escuro
 
 
 def _ler(path: Path) -> dict:
@@ -72,4 +73,5 @@ def carregar(config_path: Path, segredos_path: Path) -> Config:
         callmebot_apikey=seg.get("callmebot_apikey"),
         ia=ConfigIA(**dados.get("ia", {})),
         chaves={k: seg[k] for k in ("anthropic_api_key", "openai_api_key") if seg.get(k)},
+        tema=dados.get("aparencia", {}).get("tema", "sistema"),
     )

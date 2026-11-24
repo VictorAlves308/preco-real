@@ -1,5 +1,9 @@
 # Copie este arquivo para config.toml e ajuste.
 #
+# Aparência da janela de aviso (também dá para trocar no topo da própria janela).
+# [aparencia]
+# tema = "sistema"   # "sistema", "claro" ou "escuro"
+
 # IA (opcional): escolha o provedor e quanto pode gastar por mês.
 # [ia]
 # provedor = "claude"            # "claude", "openai" ou "nenhum"

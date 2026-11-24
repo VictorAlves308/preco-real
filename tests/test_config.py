@@ -26,3 +26,10 @@ def test_aceita_arquivo_com_bom(tmp_path):
     seg.write_bytes('﻿ntfy_topico = "abc"\n'.encode("utf-8"))
     cfg = carregar(RAIZ / "config.exemplo.toml", seg)
     assert cfg.ntfy_topico == "abc"
+
+
+def test_tema_config(tmp_path):
+    c = tmp_path / "c.toml"
+    c.write_text('[aparencia]\ntema = "escuro"\n', encoding="utf-8")
+    assert carregar(c, tmp_path / "x").tema == "escuro"
+    assert carregar(RAIZ / "config.exemplo.toml", tmp_path / "x").tema == "sistema"
