@@ -179,6 +179,37 @@ def form_de_item(raw: dict) -> dict:
 
 # ---------------------------------------------------------------- ponte com a janela
 
+TAREFA = "Monitor de precos"
+
+
+def _ler_tarefa() -> dict:
+    """Lê a tarefa agendada do Windows (intervalo e próxima execução)."""
+    if os.name != "nt":
+        return {"existe": False}
+    ps = (f"$t = Get-ScheduledTask -TaskName '{TAREFA}' -ErrorAction SilentlyContinue; "
+          "if (-not $t) { '{\"existe\": false}'; exit } "
+          f"$i = Get-ScheduledTaskInfo -TaskName '{TAREFA}'; "
+          "$r = ($t.Triggers | Where-Object { $_.Repetition.Interval } | Select-Object -First 1).Repetition.Interval; "
+          "@{existe=$true; estado=[string]$t.State; intervalo=[string]$r; "
+          "proxima=$(if ($i.NextRunTime) { $i.NextRunTime.ToString('s') } else { '' })} | ConvertTo-Json -Compress")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                           timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return json.loads(r.stdout.strip() or "{}")
+    except Exception:  # noqa: BLE001
+        return {"existe": False}
+
+
+def _rodar_script(nome: str, *args: str) -> None:
+    subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(RAIZ / nome), *args],
+                   capture_output=True, timeout=60, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def _minutos(iso: str) -> int:
+    m = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?", iso or "")
+    return int(m.group(1) or 0) * 60 + int(m.group(2) or 0) if m else 0
+
+
 def _abrir_console(cmd: list[str]) -> None:
     """Roda um comando numa janela própria (o login do programa abre o navegador)."""
     flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
@@ -233,6 +264,8 @@ class Api:
         self._instantaneo = Path(instantaneo)
         self._localizar, self._rodar_cmd = localizar, rodar_cmd
         self._abrir_terminal = _abrir_console
+        self._ler_tarefa = _ler_tarefa
+        self._rodar_script = _rodar_script
 
     def ofertas(self) -> dict:
         """Aba Ofertas: as melhores ofertas de cada produto na última verificação."""
@@ -503,6 +536,26 @@ class Api:
             msg += " Até lá sigo só com as regras."
         return (f'<div class="faixa {escape(tipo)}"><span>{escape(msg)}</span>'
                 '<button class="btn" data-ir="config">Ver configurações</button></div>')
+
+    def agendamento(self) -> dict:
+        t = self._ler_tarefa()
+        if not t.get("existe") or t.get("estado") == "Disabled":
+            return {"ativo": False, "intervalo_min": 0, "proxima": "",
+                    "texto": "Verificação automática desligada. Ligue em Configurações."}
+        minutos = _minutos(t.get("intervalo", ""))
+        prox = datetime.fromisoformat(t["proxima"]).strftime("%H:%M") if t.get("proxima") else ""
+        cada = f"{minutos // 60} h" if minutos and minutos % 60 == 0 else f"{minutos} min"
+        texto = (f"Próxima verificação automática às {prox} (a cada {cada})." if prox
+                 else f"Verificação automática a cada {cada}.")
+        return {"ativo": True, "intervalo_min": minutos, "proxima": prox, "texto": texto}
+
+    def mudar_intervalo(self, minutos: int) -> dict:
+        minutos = int(minutos)
+        if minutos <= 0:
+            self._rodar_script("desinstalar_tarefa.ps1")
+        else:
+            self._rodar_script("instalar_tarefa.ps1", "-Minutos", str(max(30, minutos)))
+        return self.agendamento()
 
     def abrir(self, link: str) -> None:
         if link.startswith("https://"):
@@ -884,6 +937,9 @@ document.addEventListener('click', async e => {
   const sb = e.target.closest('.seg button');
   if (sb) { e.preventDefault(); seg(sb.parentElement.dataset.grupo, sb.dataset.v);
     if (sb.parentElement.dataset.grupo === 'pesquisa') atualizarIA();
+    if (sb.parentElement.dataset.grupo === 'intervalo' && api()) {
+      status('Atualizando o agendamento do Windows…'); AG = await api().mudar_intervalo(+sb.dataset.v);
+      $('#agenda').textContent = AG.texto; $('#agenda-texto').textContent = AG.texto; status('Agendamento atualizado.'); }
   }
   const ed = e.target.closest('[data-editar]'); if (ed) abrirForm(+ed.dataset.editar);
   const ex = e.target.closest('[data-excluir]');
@@ -923,6 +979,13 @@ $('#form-item').addEventListener('submit', salvarForm);
 $('#form-geral').addEventListener('submit', salvarGeral);
 marcarTema();
 
+let AG = null;
+async function mostrarAgenda(){
+  AG = api() ? await api().agendamento() : (window.AG_DEMO || null);
+  if (!AG) return;
+  $('#agenda').textContent = AG.texto; $('#agenda-texto').textContent = AG.texto;
+  seg('intervalo', AG.ativo ? String(AG.intervalo_min) : '0');
+}
 let ultimo = null, IA = null, testes = {}, abertoApi = false;
 const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>';
 function opcoesModelo(c, prov){
@@ -1001,6 +1064,7 @@ async function carregarOfertas(){
   const r = api() ? await api().ofertas() : window.OFERTAS_DEMO; if (!r) return r;
   const o = $('#ofertas'); o.innerHTML = r.html; o.classList.remove('entrar'); void o.offsetWidth; o.classList.add('entrar');
   $('#quando').textContent = r.quando ? 'Última verificação: ' + r.quando : '';
+  mostrarAgenda();
   return r;
 }
 async function acompanhar(){  // depois de Verificar agora, atualiza quando a verificação terminar
@@ -1079,6 +1143,11 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
         '<button type="button" class="btn" id="testar">Enviar teste</button></div>'
         "<small>Use um nome difícil de adivinhar: quem souber o nome lê os avisos.</small></div>"
         '<div class="botoes"><button type="submit" class="btn primario">Salvar</button></div></div></form>'
+        '<section class="cartao secao" style="margin-top:14px"><h3>Verificação automática</h3>'
+        '<p class="dica">O monitor busca preços novos sozinho, mesmo com este app fechado. Só precisa do PC ligado.</p>'
+        '<div class="campo"><span class="rotulo">Verificar a cada</span>'
+        + _seg("intervalo", (("30", "30 min"), ("60", "1 hora"), ("180", "3 horas"), ("0", "Desligada")))
+        + '<small id="agenda-texto"></small></div></section>'
         '<section class="cartao secao" style="margin-top:14px">'
         '<div class="ia-cab"><span class="ia-icone"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'
         '<path d="m4 17 6-6-6-6M12 19h8"/></svg></span><h3>Pesquisa com IA</h3>'
@@ -1100,7 +1169,7 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
         '<nav role="tablist"><button data-aba="ofertas" aria-selected="true">Ofertas</button>'
         '<button data-aba="produtos" aria-selected="false">Produtos</button>'
         '<button data-aba="config" aria-selected="false">Configurações</button></nav>'
-        '<main><section id="aba-ofertas"><div class="barra"><span id="quando"></span></div>'
+        '<main><section id="aba-ofertas"><div class="barra"><span id="quando"></span><span id="agenda"></span></div>'
         '<div id="ofertas"><div class="cartao sk-cartao"><div class="sk-topo"><span class="sk sk-foto"></span><span class="sk-linhas"><span class="sk sk-l1"></span><span class="sk sk-l2"></span></span></div><span class="sk sk-preco"></span><span class="sk sk-graf"></span></div><div class="cartao sk-cartao"><div class="sk-topo"><span class="sk sk-foto"></span><span class="sk-linhas"><span class="sk sk-l1"></span><span class="sk sk-l2"></span></span></div><span class="sk sk-preco"></span><span class="sk sk-graf"></span></div></div></section>'
         '<section id="aba-produtos" class="oculto"><div id="tela-lista"><div id="lista" class="lista"></div>'
         '<button class="btn primario adicionar" id="adicionar">Adicionar produto</button></div>'

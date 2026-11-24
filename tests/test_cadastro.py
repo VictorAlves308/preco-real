@@ -347,3 +347,28 @@ def test_nao_liga_ia_sem_conectar(tmp_path):
 
 def test_chave_desabilitada_sem_conexao_no_js():
     assert "Conecte primeiro" in html_cadastro()
+
+
+def test_agendamento_mostrado(tmp_path):
+    api = _api_ia(tmp_path, lambda n: None)
+    api._ler_tarefa = lambda: {"existe": True, "estado": "Ready", "intervalo": "PT30M", "proxima": "2026-11-24T14:18:00"}
+    assert api.agendamento() == {"ativo": True, "intervalo_min": 30, "proxima": "14:18",
+                                 "texto": "Próxima verificação automática às 14:18 (a cada 30 min)."}
+    api._ler_tarefa = lambda: {"existe": True, "estado": "Ready", "intervalo": "PT3H", "proxima": "2026-11-24T17:00:00"}
+    assert api.agendamento()["intervalo_min"] == 180 and "a cada 3 h" in api.agendamento()["texto"]
+    api._ler_tarefa = lambda: {"existe": False}
+    assert api.agendamento()["ativo"] is False and "desligada" in api.agendamento()["texto"]
+
+
+def test_mudar_intervalo(tmp_path):
+    api = _api_ia(tmp_path, lambda n: None)
+    chamadas = []
+    api._rodar_script = lambda nome, *args: chamadas.append((nome, args))
+    api._ler_tarefa = lambda: {"existe": False}
+    api.mudar_intervalo(60)
+    api.mudar_intervalo(0)
+    assert chamadas == [("instalar_tarefa.ps1", ("-Minutos", "60")), ("desinstalar_tarefa.ps1", ())]
+
+
+def test_html_intervalo():
+    assert 'data-grupo="intervalo"' in html_cadastro()
