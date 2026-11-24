@@ -33,7 +33,8 @@ def test_formatar():
     titulo, corpo = formatar([Achado("Ryzen 7 5700X", _oferta(), "sem_historico", [])])
     assert "R$ 1.529,40 em 10x sem juros" in corpo
     assert "PIX R$ 1.299,99" in corpo
-    assert "sem histórico, não confirmado" in corpo
+    assert "Sem histórico, não confirmado" in corpo
+    assert "✅" not in corpo and "⚠️" not in corpo
     assert "Frete: confira na loja" in corpo
     assert "https://www.zoom.com.br/lead?oid=743605209" in corpo
     assert "1" in titulo
@@ -43,7 +44,7 @@ def test_formatar_mercado_livre_e_parcelas_longas():
     _, corpo = formatar([Achado("x", _oferta(loja="Mercado Livre", parcelas=18), "real", ["painel não confirmado"])])
     assert "Frete grátis (Meli+)" in corpo
     assert "em 18x (confira sem juros na loja)" in corpo
-    assert "promoção real" in corpo
+    assert "Promoção real" in corpo
     assert "painel não confirmado" in corpo
 
 

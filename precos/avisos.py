@@ -19,9 +19,9 @@ from .zoom import Oferta
 log = logging.getLogger(__name__)
 
 ROTULOS = {
-    "real": "✅ promoção real",
-    "sem_historico": "⚠️ sem histórico, não confirmado",
-    "normal": "menor preço já visto",
+    "real": "Promoção real",
+    "sem_historico": "Sem histórico, não confirmado",
+    "normal": "Menor preço já visto",
 }
 
 
