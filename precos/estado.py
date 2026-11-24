@@ -19,6 +19,8 @@ class Estado:
             CREATE TABLE IF NOT EXISTS menores (item TEXT PRIMARY KEY, total REAL);
             CREATE TABLE IF NOT EXISTS ia_cache (chave TEXT PRIMARY KEY, valor TEXT);
             CREATE TABLE IF NOT EXISTS gastos (mes TEXT PRIMARY KEY, usd REAL);
+            CREATE TABLE IF NOT EXISTS observacoes (chave TEXT, dia TEXT, preco REAL,
+                                                    PRIMARY KEY (chave, dia));
             """
         )
 
@@ -62,3 +64,18 @@ class Estado:
                 "INSERT INTO gastos VALUES (?,?) ON CONFLICT(mes) DO UPDATE SET usd = usd + excluded.usd",
                 (mes, usd),
             )
+
+    # ---- histórico próprio: menor preço à vista de cada modelo por dia
+    def registrar_observacao(self, chave: str, dia, preco: float) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO observacoes VALUES (?,?,?) ON CONFLICT(chave, dia) "
+                "DO UPDATE SET preco = MIN(preco, excluded.preco)",
+                (chave, dia.isoformat(), preco),
+            )
+
+    def historico_proprio(self, chave: str):
+        from datetime import date
+
+        rows = self.db.execute("SELECT dia, preco FROM observacoes WHERE chave=? ORDER BY dia", (chave,)).fetchall()
+        return [(date.fromisoformat(d), p) for d, p in rows]

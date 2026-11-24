@@ -6,3 +6,4 @@ __pycache__/
 *.log
 .superpowers/
 .pytest_cache/
+notas-linkedin.md

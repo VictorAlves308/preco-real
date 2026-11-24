@@ -60,6 +60,7 @@ class Hit:
     marketplace: bool
     loja: str = ""
     imagem: str = ""
+    categoria: str = ""  # ex.: "tv", "monitor" (página de categoria no Zoom)
 
 
 def _sem_juros(parcelas, total) -> bool:
@@ -136,9 +137,20 @@ def parse_busca(estado: dict) -> list[Hit]:
                 sem_juros=_sem_juros(parcelas, total),
                 marketplace=bool(h.get("marketplace")),
                 imagem=h.get("image") or "",
+                categoria=h.get("categorySeoUrl") or "",
                 loja=h.get("merchantName") or (h.get("bestOffer") or {}).get("merchantName", ""),
             )
         )
+    return out
+
+
+def parse_links(estado: dict) -> list[tuple[str, str]]:
+    """Links prontos de filtro da categoria (ex.: ('32\"', '/tv/tamanho-32-polegadas'))."""
+    links = (((estado.get("pageSEO") or {}).get("data") or {}).get("semanticLinks")) or []
+    out = []
+    for l in links:
+        u = l.get("link", "")
+        out.append((l.get("label", ""), u.split("zoom.com.br", 1)[-1] if "zoom.com.br" in u else u))
     return out
 
 

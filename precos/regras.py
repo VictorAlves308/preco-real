@@ -77,3 +77,25 @@ def veredito(preco_vista: float, historico: list[tuple[date, float]], hoje: date
 
 def ordenar(ofertas: list[Oferta]) -> list[Oferta]:
     return sorted(ofertas, key=lambda o: ((o.parcelas or 0) < 10, o.total_parcelado or float("inf")))
+
+
+_RE_UNIDADE_FIM = re.compile(r"\d+(?:HZ|MS|GB|TB|MB|GHZ|MHZ|K|P|W|MP|V|MAH|MM|CM|POL)", re.I)
+
+
+def extrair_codigo(nome: str) -> str | None:
+    """Código do modelo no nome do anúncio (ex.: '24U411B-B.AWZM' -> '24U411B'), ou None.
+
+    Serve para ligar um anúncio solto ao produto do catálogo e para o histórico próprio.
+    """
+    melhor = None
+    for token in re.split(r"[\s,;()\[\]|]+", nome or ""):
+        t = re.split(r"[-./]", token.strip("\"'”“"))[0].upper()
+        if not re.fullmatch(r"[A-Z0-9]{4,16}", t):
+            continue
+        if sum(c.isdigit() for c in t) < 2 or not any(c.isalpha() for c in t):
+            continue
+        if _RE_UNIDADE_FIM.fullmatch(t):
+            continue
+        if melhor is None or len(t) > len(melhor):
+            melhor = t
+    return melhor
