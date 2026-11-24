@@ -230,3 +230,22 @@ def test_menor_preco_visto_exige_abaixo_da_mediana(tmp_path):
 def test_menor_preco_visto_abaixo_da_mediana_avisa(tmp_path):
     achados = _rodar([_cpu("mais_barato")], {URL_CPU: _cpu_com_preco(1150.0, 1300.0)}, tmp_path, Avisar())
     assert [a.veredito for a in achados] == ["normal"]
+
+
+def test_rodada_guarda_foto_do_item(tmp_path):
+    e = Estado(tmp_path / "e.db")
+    rodar(Config(itens=[_cpu()]), e, baixar=lambda u: html_de(_sem_historico()), avisar=Avisar(),
+          hoje=HOJE, dormir=lambda s: None)
+    assert e.cache_ler("imagem:Ryzen 7 5700X").startswith("https://image.zst.com.br/")
+
+
+def test_rodada_grava_instantaneo(tmp_path):
+    import json
+    snap = tmp_path / "ultima.json"
+    rodar(Config(itens=[_cpu()]), Estado(tmp_path / "e.db"), baixar=lambda u: html_de(estado("zoom_produto_5700x.json")),
+          avisar=Avisar(), hoje=HOJE, dormir=lambda s: None, instantaneo=snap)
+    d = json.loads(snap.read_text(encoding="utf-8"))
+    cartoes = d["itens"]["Ryzen 7 5700X"]
+    assert cartoes and cartoes[0]["preco"] == "R$ 1.529,40"
+    assert cartoes[0]["veredito"] == "maquiada"  # aparece no painel mesmo sem gerar aviso
+    assert d["quando"]

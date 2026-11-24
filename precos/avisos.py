@@ -43,7 +43,8 @@ def _frete(loja: str) -> str:
     return "frete grátis (Meli+)" if "mercado livre" in loja.lower() else "frete: confira na loja"
 
 
-ROTULOS_JANELA = {"real": "Promoção real", "sem_historico": "Sem histórico", "normal": "Menor preço já visto"}
+ROTULOS_JANELA = {"real": "Promoção real", "sem_historico": "Sem histórico", "normal": "Menor preço já visto",
+                  "maquiada": "Desconto maquiado"}
 
 
 def _parcelas(o: Oferta) -> str:

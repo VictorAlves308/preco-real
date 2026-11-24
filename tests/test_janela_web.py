@@ -85,3 +85,9 @@ def test_seletor_de_tema_com_icones():
     assert html.count('<svg class="ic"') == 3
     for rotulo in ("Seguir o sistema", "Tema claro", "Tema escuro"):
         assert f'aria-label="{rotulo}"' in html
+
+
+def test_aviso_tem_botao_abrir_monitor():
+    assert 'class="btn-monitor"' in html_janela("t", [ITEM], "00:00")
+    from precos.janela_web import CSS
+    assert ".chip.maquiada" in CSS

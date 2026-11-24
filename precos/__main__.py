@@ -76,7 +76,8 @@ def _executar(argv: list[str]) -> int:
         print("Nenhum item em config.toml (copie config.exemplo.toml)")
         return 1
     estado = Estado(DADOS / "estado.db")
-    achados = rodar(cfg, estado, pesquisador=_montar_pesquisador(cfg, estado))
+    achados = rodar(cfg, estado, pesquisador=_montar_pesquisador(cfg, estado),
+                    instantaneo=DADOS / "ultima_rodada.json")
     logging.info("rodada terminou: %d achados", len(achados))
     print(f"OK: {len(achados)} achados")
     return 0

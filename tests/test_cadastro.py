@@ -98,3 +98,52 @@ def test_html_cadastro():
     for trecho in ('data-aba="produtos"', 'data-aba="config"', 'id="f-buscas"', 'id="verificar"',
                    'aria-label="Tema escuro"'):
         assert trecho in html
+
+
+def test_api_fotos(tmp_path):
+    from precos.estado import Estado
+    from util_html import estado as fixture, html_de
+    (tmp_path / "config.toml").write_text(
+        '[[itens]]\nnome = "Monitor"\nbuscas = ["monitor 144hz"]\n\n[[itens]]\nnome = "Sem foto"\nbuscas = ["x"]\n',
+        encoding="utf-8")
+    Estado(tmp_path / "e.db").cache_gravar("imagem:Sem foto", "")
+    pedidos = []
+
+    def baixar(u):
+        pedidos.append(u)
+        return html_de(fixture("zoom_busca_monitor.json"))
+
+    api = Api(tmp_path / "config.toml", tmp_path / "s.toml", tmp_path / "e.db", baixar=baixar)
+    assert api.dados()["itens"][0]["imagem"] == ""
+    fotos = api.atualizar_imagens()
+    assert fotos["0"].startswith("https://")
+    assert api.dados()["itens"][0]["imagem"] == fotos["0"]
+    assert api.atualizar_imagens() == {}  # já tem: não baixa de novo
+    assert len(pedidos) == 2
+
+
+def test_api_ofertas_html(tmp_path):
+    import json
+    (tmp_path / "config.toml").write_text('[[itens]]\nnome = "CPU"\nbuscas = ["x"]\n\n[[itens]]\nnome = "TV"\nbuscas = ["y"]\n',
+                                          encoding="utf-8")
+    api = Api(tmp_path / "config.toml", tmp_path / "s.toml", tmp_path / "e.db", instantaneo=tmp_path / "u.json")
+    vazio = api.ofertas()
+    assert vazio["quando"] == "" and "Ainda não verifiquei" in vazio["html"]
+    cartao = {"item": "CPU", "nome": "Ryzen", "loja": "KaBuM!", "preco": "R$ 1,00", "parcelas": "em 10x sem juros",
+              "pix": "PIX R$ 1,00", "veredito": "maquiada", "rotulo": "Desconto maquiado", "tags": [],
+              "frete": "f", "link": "https://x", "imagem": "", "historico": [], "minimo": "", "mediana": ""}
+    (tmp_path / "u.json").write_text(json.dumps({"quando": "2026-11-24T13:40:00", "itens": {"CPU": [cartao]}}),
+                                     encoding="utf-8")
+    r = api.ofertas()
+    assert r["quando"] == "24/11 às 13:40"
+    assert r["html"].count('class="cartao"') == 1
+    assert "TV" in r["html"] and "Ainda não verificado" in r["html"]
+    (tmp_path / "u.json").write_text(json.dumps({"quando": "2026-11-24T13:40:00", "itens": {"CPU": [cartao], "TV": []}}),
+                                     encoding="utf-8")
+    assert "Nenhuma oferta passou nos seus filtros" in api.ofertas()["html"]
+
+
+def test_app_abre_em_ofertas():
+    html = html_cadastro()
+    assert '<button data-aba="ofertas" aria-selected="true">' in html
+    assert 'id="aba-ofertas"' in html

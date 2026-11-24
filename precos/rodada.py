@@ -1,11 +1,13 @@
 """Uma rodada: para cada item, busca ofertas, aplica as regras e avisa o que vale a pena."""
 from __future__ import annotations
 
+import json
 import logging
 import random
 import time
 from statistics import median
-from datetime import date
+from datetime import date, datetime
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import zoom
@@ -120,6 +122,29 @@ def _escolher(item: Item, cands, estado: Estado, pesquisador=None) -> list[Achad
     return escolhidos
 
 
+def _resumo(item: Item, cands, n: int = 3) -> list[dict]:
+    """As melhores ofertas do item nesta rodada (para a aba Ofertas), mesmo as que não geram aviso."""
+    vistos, sel = set(), []
+    for o, v, tags, hist in sorted(cands, key=lambda c: _chave(item, c[0])):
+        if o.offer_id not in vistos:
+            vistos.add(o.offer_id)
+            sel.append(Achado(item.nome, o, v, list(tags), hist))
+        if len(sel) == n:
+            break
+    return dados_janela(sel)
+
+
+def _gravar_instantaneo(caminho: Path, resumo: dict) -> None:
+    try:
+        antigo = json.loads(caminho.read_text(encoding="utf-8")).get("itens", {})
+    except (OSError, ValueError):
+        antigo = {}
+    antigo.update(resumo)  # item que deu erro nesta rodada mantém o resultado anterior
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_text(json.dumps({"quando": datetime.now().isoformat(timespec="seconds"), "itens": antigo},
+                                  ensure_ascii=False), encoding="utf-8")
+
+
 def avisar_todos(cfg: Config):
     def avisar(achados: list[Achado]) -> dict[str, bool]:
         titulo, corpo = formatar(achados)
@@ -137,22 +162,30 @@ def avisar_todos(cfg: Config):
 
 
 def rodar(cfg: Config, estado: Estado, baixar=zoom.baixar, avisar=None,
-          hoje: date | None = None, dormir=time.sleep, pesquisador=None) -> list[Achado]:
+          hoje: date | None = None, dormir=time.sleep, pesquisador=None,
+          instantaneo: Path | None = None) -> list[Achado]:
     hoje = hoje or date.today()
     avisar = avisar or avisar_todos(cfg)
     achados: list[Achado] = []
+    resumo: dict[str, list[dict]] = {}
     for i, item in enumerate(cfg.itens):
         if i:
             dormir(random.uniform(3, 6))
         try:
             cands = _candidatos(item, baixar, hoje, dormir, pesquisador)
             novos = _escolher(item, cands, estado, pesquisador)
+            resumo[item.nome] = _resumo(item, cands)
+            fotos = [c[0].imagem for c in sorted(cands, key=lambda c: c[0].total_parcelado) if c[0].imagem]
+            if fotos:  # a tela de cadastro mostra a foto do produto
+                estado.cache_gravar(f"imagem:{item.nome}", fotos[0])
             log.info("%s: %d elegíveis, %d para avisar", item.nome, len(cands), len(novos))
             if not cands:
                 log.info("%s: nenhuma oferta elegível", item.nome)
             achados += novos
         except Exception as e:  # noqa: BLE001 - um item com problema não derruba os outros
             log.warning("%s: erro %s", item.nome, e)
+    if instantaneo is not None:
+        _gravar_instantaneo(Path(instantaneo), resumo)
     if achados:
         avisar(achados)
         for a in achados:

@@ -16,8 +16,17 @@ from html import escape
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .config import url_busca
-from .janela_web import _CLARO, _ESCURO, ICONES, PREF, TEMAS, salvar_tema
+import time
+
+from . import zoom
+from .config import carregar, url_busca
+from .estado import Estado
+from .regras import passa_filtro_nome
+from datetime import datetime
+import webbrowser
+
+from . import janela_web
+from .janela_web import _CLARO, _ESCURO, CSS_CARTAO, ICONES, PREF, TEMAS, salvar_tema
 
 RAIZ = Path(__file__).resolve().parent.parent
 CABECALHO = (
@@ -161,15 +170,79 @@ def form_de_item(raw: dict) -> dict:
 # ---------------------------------------------------------------- ponte com a janela
 
 class Api:
-    def __init__(self, config_path: Path = RAIZ / "config.toml", segredos_path: Path = RAIZ / "segredos.toml"):
+    def __init__(self, config_path: Path = RAIZ / "config.toml", segredos_path: Path = RAIZ / "segredos.toml",
+                 estado_path: Path = RAIZ / "dados" / "estado.db", baixar=None,
+                 instantaneo: Path = RAIZ / "dados" / "ultima_rodada.json"):
         self._config_path = Path(config_path)
         self._segredos_path = Path(segredos_path)
+        self._estado_path = Path(estado_path)
+        self._baixar = baixar or zoom.baixar
+        self._instantaneo = Path(instantaneo)
+
+    def ofertas(self) -> dict:
+        """Aba Ofertas: as melhores ofertas de cada produto na última verificação."""
+        try:
+            snap = json.loads(self._instantaneo.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"quando": "", "html": '<div class="vazio"><b>Ainda não verifiquei os preços</b>'
+                    'Clique em Verificar agora. Leva cerca de um minuto.</div>'}
+        quando = datetime.fromisoformat(snap["quando"]).strftime("%d/%m às %H:%M")
+        partes, idx = [], 0
+        for raw in _ler(self._config_path).get("itens", []):
+            nome = raw.get("nome", "")
+            cartoes = snap.get("itens", {}).get(nome)
+            partes.append(f'<section class="grupo"><h3>{escape(nome)}</h3>')
+            if not cartoes:
+                msg = ("Nenhuma oferta passou nos seus filtros na última verificação." if cartoes is not None
+                       else "Ainda não verificado. Clique em Verificar agora.")
+                partes.append(f'<div class="cartao nada">{msg}</div></section>')
+                continue
+            partes.append(janela_web._cartao(cartoes[0], idx)); idx += 1
+            if len(cartoes) > 1:
+                partes.append(f'<details class="mais"><summary>Mais {len(cartoes) - 1} '
+                              f'oferta{"s" if len(cartoes) > 2 else ""}</summary>')
+                for c in cartoes[1:]:
+                    partes.append(janela_web._cartao(c, idx)); idx += 1
+                partes.append("</details>")
+            partes.append("</section>")
+        return {"quando": quando, "html": "".join(partes)}
+
+    def abrir(self, link: str) -> None:
+        if link.startswith("https://"):
+            webbrowser.open(link)
+
+    def _foto(self, nome: str) -> str:
+        return Estado(self._estado_path).cache_ler(f"imagem:{nome}") or ""
+
+    def atualizar_imagens(self) -> dict:
+        """Busca no Zoom a foto dos produtos que ainda não têm. Devolve {indice: url}."""
+        cfg = carregar(self._config_path, self._segredos_path)
+        estado, novas = Estado(self._estado_path), {}
+        for i, item in enumerate(cfg.itens):
+            if self._foto(item.nome) or not item.url:
+                continue
+            if novas:
+                time.sleep(1)
+            try:
+                est = zoom.extrair_estado(self._baixar(item.url))
+                if item.tipo == "produto":
+                    fotos = [o.imagem for o in zoom.parse_produto(est, item.url).ofertas if o.imagem]
+                else:
+                    hits = [h for h in zoom.parse_busca(est) if h.imagem]
+                    bons = [h for h in hits if passa_filtro_nome(h.nome, item)[0]]
+                    fotos = [h.imagem for h in (bons or hits)]
+            except Exception:  # noqa: BLE001 - sem foto não é erro
+                continue
+            if fotos:
+                estado.cache_gravar(f"imagem:{item.nome}", fotos[0])
+                novas[str(i)] = fotos[0]
+        return novas
 
     def dados(self) -> dict:
         raw, seg = _ler(self._config_path), _ler(self._segredos_path)
         ia = raw.get("ia", {})
         return {
-            "itens": [form_de_item(i) for i in raw.get("itens", [])],
+            "itens": [dict(form_de_item(i), imagem=self._foto(i.get("nome", ""))) for i in raw.get("itens", [])],
             "geral": {
                 "tema": raw.get("aparencia", {}).get("tema", "sistema"),
                 "ntfy_topico": seg.get("ntfy_topico", ""),
@@ -254,7 +327,7 @@ class Api:
 # ---------------------------------------------------------------- página
 
 CSS = (
-    ":root{" + _CLARO + "}"
+    CSS_CARTAO + ":root{" + _CLARO + "}"
     ':root[data-tema="escuro"]{' + _ESCURO + "}"
     '@media (prefers-color-scheme: dark){:root[data-tema="sistema"]{' + _ESCURO + "}}"
     + """
@@ -284,10 +357,25 @@ main::-webkit-scrollbar-thumb:hover{background:var(--suave)}
 .lista{display:flex;flex-direction:column;gap:10px}
 .cartao{background:var(--cartao);border:1px solid var(--borda);border-radius:12px;padding:16px}
 .prod{display:flex;align-items:center;gap:16px}
+.prod .foto{width:64px;height:64px;flex:none;border-radius:8px;background:var(--foto);object-fit:contain;
+  padding:4px;border:1px solid var(--borda)}
+.prod .foto.vazia{display:grid;place-items:center;background:var(--fundo);color:var(--suave);
+  font-size:22px;font-weight:650}
 .prod .info{flex:1;min-width:0}
 .prod h2{font-size:15px;font-weight:600}
 .prod .busca{color:var(--suave);font-size:12.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.etiquetas{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.grupo+.grupo{margin-top:22px}
+.grupo h3{font-size:13px;font-weight:650;color:var(--suave);text-transform:uppercase;
+  letter-spacing:.05em;margin:0 0 8px 2px}
+.nada{color:var(--suave);font-size:13px}
+.mais{margin-top:8px;border:0;padding:0}
+#ofertas .item{display:none}
+#ofertas .nome{margin-top:0}
+.mais summary{cursor:pointer;color:var(--suave);font-size:13px;font-weight:600;padding:4px 2px}
+.mais .cartao{margin-top:8px}
+.barra{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;
+  color:var(--suave);font-size:12.5px}
 .chip{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap;
   background:var(--normal-bg);color:var(--normal-tx)}
 .chip.verde{background:var(--bom-bg);color:var(--bom-tx)}
@@ -364,9 +452,11 @@ function render(){
   $('#resumo').textContent = n ? `${n} produto${n > 1 ? 's' : ''} monitorado${n > 1 ? 's' : ''}` : 'Nenhum produto ainda';
   $('#lista').innerHTML = n ? D.itens.map((it, i) => `
     <article class="cartao prod">
+      ${it.imagem ? `<img class="foto" src="${esc(it.imagem)}" alt="">`
+        : `<div class="foto vazia">${esc((it.nome || '?').trim()[0].toUpperCase())}</div>`}
       <div class="info"><h2>${esc(it.nome)}</h2>
         <p class="busca">${it.buscas ? 'Busca: ' + esc(it.buscas) : 'Produto específico'}</p>
-        <div class="chips">${chipsDe(it)}</div></div>
+        <div class="etiquetas">${chipsDe(it)}</div></div>
       <div class="acoes"><button class="btn" data-editar="${i}">Editar</button>
         <button class="btn perigo" data-excluir="${i}">Excluir</button></div>
     </article>`).join('')
@@ -411,6 +501,9 @@ async function salvarForm(ev){
   const r = await api().salvar_item(f, editando);
   if (!r.ok) { $('#f-erro').textContent = r.erro; $('#f-erro').classList.remove('oculto'); return; }
   D = r.dados; render(); fecharForm(); status('Produto salvo.');
+  const novas = await api().atualizar_imagens();
+  for (const [i, url] of Object.entries(novas)) if (D.itens[+i]) D.itens[+i].imagem = url;
+  if (Object.keys(novas).length) render();
 }
 
 async function salvarGeral(ev){
@@ -427,8 +520,8 @@ document.addEventListener('click', async e => {
   if (t) { raiz.dataset.tema = t.dataset.escolha; marcarTema(); if (api()) api().salvar_tema(t.dataset.escolha); }
   const aba = e.target.closest('[data-aba]');
   if (aba) { document.querySelectorAll('[data-aba]').forEach(b => b.setAttribute('aria-selected', b === aba));
-    $('#aba-produtos').classList.toggle('oculto', aba.dataset.aba !== 'produtos');
-    $('#aba-config').classList.toggle('oculto', aba.dataset.aba !== 'config'); }
+    for (const a of ['ofertas','produtos','config']) $('#aba-' + a).classList.toggle('oculto', aba.dataset.aba !== a);
+  }
   const sb = e.target.closest('.seg button');
   if (sb) { e.preventDefault(); seg(sb.parentElement.dataset.grupo, sb.dataset.v);
     if (sb.parentElement.dataset.grupo === 'pesquisa') atualizarIA();
@@ -439,14 +532,35 @@ document.addEventListener('click', async e => {
             else { ex.dataset.conf = '1'; ex.textContent = 'Confirmar'; setTimeout(() => { delete ex.dataset.conf; ex.textContent = 'Excluir'; }, 3000); } }
   if (e.target.closest('#adicionar')) abrirForm(null);
   if (e.target.closest('#cancelar')) fecharForm();
-  if (e.target.closest('#verificar') && api()) status(await api().verificar_agora());
+  const lk = e.target.closest('[data-link]'); if (lk && api()) api().abrir(lk.dataset.link);
+  if (e.target.closest('#verificar') && api()) { status(await api().verificar_agora()); acompanhar(); }
   if (e.target.closest('#testar') && api()) status(await api().testar_aviso());
 });
 $('#form-item').addEventListener('submit', salvarForm);
 $('#form-geral').addEventListener('submit', salvarGeral);
 marcarTema();
 
-async function iniciar(){ D = api() ? await api().dados() : window.DADOS_DEMO; if (D) render(); }
+let ultimo = null;
+async function carregarOfertas(){
+  const r = api() ? await api().ofertas() : window.OFERTAS_DEMO; if (!r) return r;
+  $('#ofertas').innerHTML = r.html;
+  $('#quando').textContent = r.quando ? 'Última verificação: ' + r.quando : '';
+  return r;
+}
+async function acompanhar(){  // depois de Verificar agora, atualiza quando a verificação terminar
+  const antes = ultimo;
+  for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 5000));
+    const r = await carregarOfertas(); if (r && r.quando && r.quando !== antes) { ultimo = r.quando; status('Preços atualizados.'); return; } }
+}
+async function iniciar(){
+  const r = await carregarOfertas(); if (r) ultimo = r.quando;
+  D = api() ? await api().dados() : window.DADOS_DEMO; if (!D) return; render();
+  if (api() && D.itens.some(i => !i.imagem)) {
+    const novas = await api().atualizar_imagens();
+    for (const [i, url] of Object.entries(novas)) if (D.itens[+i]) D.itens[+i].imagem = url;
+    if (Object.keys(novas).length) render();
+  }
+}
 if (window.DADOS_DEMO) iniciar(); else window.addEventListener('pywebviewready', iniciar);
 """
 
@@ -463,7 +577,7 @@ def _campo(id_: str, rotulo: str, dica: str = "", tipo: str = "input", ph: str =
             + (f"<small>{escape(dica)}</small>" if dica else "") + "</div>")
 
 
-def html_cadastro(tema: str = "sistema", demo: dict | None = None) -> str:
+def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo: dict | None = None) -> str:
     tema = tema if tema in TEMAS else "sistema"
     seletor = "".join(
         f'<button data-escolha="{t}" aria-label="{r}" title="{r}">'
@@ -516,15 +630,19 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None) -> str:
         '<input id="g-limite" inputmode="decimal" placeholder="5"><small>Ao chegar nele, a IA pausa até o mês virar.</small></div></div>'
         '<div class="botoes"><button type="submit" class="btn primario">Salvar configurações</button></div></form>'
     )
-    demo_js = f"<script>window.DADOS_DEMO={json.dumps(demo, ensure_ascii=False)};</script>" if demo else ""
+    demo_js = (f"<script>window.DADOS_DEMO={json.dumps(demo, ensure_ascii=False)};"
+               f"window.OFERTAS_DEMO={json.dumps(ofertas_demo, ensure_ascii=False)};</script>") if demo else ""
     return (
         f'<!doctype html><html lang="pt-BR" data-tema="{tema}"><head><meta charset="utf-8">'
         f"<title>Monitor de preços</title><style>{CSS}</style></head><body>"
         '<header><div><h1>Monitor de preços</h1><p id="resumo">Carregando…</p></div>'
         f'<div class="temas" role="group" aria-label="Tema">{seletor}</div></header>'
-        '<nav role="tablist"><button data-aba="produtos" aria-selected="true">Produtos</button>'
+        '<nav role="tablist"><button data-aba="ofertas" aria-selected="true">Ofertas</button>'
+        '<button data-aba="produtos" aria-selected="false">Produtos</button>'
         '<button data-aba="config" aria-selected="false">Configurações</button></nav>'
-        '<main><section id="aba-produtos"><div id="tela-lista"><div id="lista" class="lista"></div>'
+        '<main><section id="aba-ofertas"><div class="barra"><span id="quando"></span></div>'
+        '<div id="ofertas"></div></section>'
+        '<section id="aba-produtos" class="oculto"><div id="tela-lista"><div id="lista" class="lista"></div>'
         '<button class="btn primario adicionar" id="adicionar">Adicionar produto</button></div>'
         f'<div id="tela-form" class="oculto">{form_item}</div></section>'
         f'<section id="aba-config" class="oculto">{form_geral}</section></main>'

@@ -80,7 +80,7 @@ main::-webkit-scrollbar-thumb:hover{background:var(--suave)}
 .chip.sem_historico{background:var(--sem-bg);color:var(--sem-tx)}
 .chip.normal{background:var(--bom-bg);color:var(--bom-tx)}
 .chip.alto{background:var(--alto-bg);color:var(--alto-tx)}
-.chip.muito{background:var(--muito-bg);color:var(--muito-tx)}
+.chip.muito,.chip.maquiada{background:var(--muito-bg);color:var(--muito-tx)}
 .chips{display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-top:6px}
 .loja{color:var(--suave);font-size:12.5px;margin-top:2px;font-variant-numeric:tabular-nums}
 .hist{margin-top:14px;padding-top:12px;border-top:1px solid var(--borda)}
@@ -102,11 +102,16 @@ main::-webkit-scrollbar-thumb:hover{background:var(--suave)}
 button{font:inherit;cursor:pointer;border-radius:8px}
 .abrir{background:var(--acento);color:var(--acento-texto);border:0;padding:8px 16px;font-weight:600}
 .abrir:hover{background:var(--acento-hover)}
-footer{padding:12px 20px 16px;display:flex;justify-content:flex-end;border-top:1px solid var(--borda)}
+footer{padding:12px 20px 16px;display:flex;justify-content:space-between;border-top:1px solid var(--borda)}
+.btn-monitor{background:transparent;color:var(--texto);border:1px solid var(--borda);padding:7px 14px}
+.btn-monitor:hover{background:var(--cartao)}
 .fechar{background:transparent;color:var(--texto);border:1px solid var(--borda);padding:7px 18px}
 .fechar:hover{background:var(--cartao)}
 """
 )
+
+# Estilos só dos cartões de oferta (reaproveitados no app principal)
+CSS_CARTAO = CSS[CSS.index(".cartao{"):CSS.index("footer{")]
 
 JS = """
 const raiz = document.documentElement;
@@ -120,6 +125,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-link]');
   if (b) { window.pywebview ? pywebview.api.abrir(b.dataset.link) : window.open(b.dataset.link); }
   if (e.target.closest('.fechar')) { window.pywebview ? pywebview.api.fechar() : window.close(); }
+  if (e.target.closest('.btn-monitor') && window.pywebview) { pywebview.api.abrir_monitor(); }
 });
 """
 
@@ -248,7 +254,7 @@ def html_janela(titulo: str, itens: list[dict], verificado: str, tema: str = "si
         f"<header><div><h1>{escape(titulo)}</h1><p>Verificado às {escape(verificado)}</p></div>"
         f'<div class="temas" role="group" aria-label="Tema">{seletor}</div></header>'
         f"<main>{cartoes}</main>"
-        '<footer><button class="fechar">Fechar</button></footer>'
+        '<footer><button class="btn-monitor">Abrir monitor</button><button class="fechar">Fechar</button></footer>'
         f"<script>{JS}</script></body></html>"
     )
 
@@ -263,6 +269,18 @@ class _Api:
 
     def salvar_tema(self, tema: str) -> None:
         salvar_tema(PREF, tema)
+
+    def abrir_monitor(self) -> None:
+        import os
+        import subprocess
+        import sys
+
+        exe = Path(sys.executable)
+        pyw = exe.with_name("pythonw.exe")
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+        subprocess.Popen([str(pyw if pyw.exists() else exe), "-m", "precos", "--cadastro"],
+                         cwd=PREF.parent.parent, creationflags=flags, close_fds=True)
+        self.fechar()
 
     def fechar(self) -> None:
         if self._janela:
