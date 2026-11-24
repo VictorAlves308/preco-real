@@ -20,7 +20,7 @@ import time
 
 from . import zoom
 from .config import ConfigIA, carregar, url_busca
-from .ia import NOMES, ClaudeCode, Codex, ErroIA, _rodar_cmd, classificar_erro, criar
+from .ia import NOMES, ClaudeCode, Codex, ErroIA, _rodar_cmd, classificar_erro, criar, modelo_escolhido
 from .estado import Estado
 from .regras import passa_filtro_nome
 from datetime import datetime
@@ -48,18 +48,27 @@ def _valor(v) -> str:
     return f'"{s}"'
 
 
-def para_toml(dados: dict) -> str:
-    linhas = []
-    for k, v in dados.items():
-        if not isinstance(v, (dict, list)) or (isinstance(v, list) and not (v and isinstance(v[0], dict))):
-            linhas.append(f"{k} = {_valor(v)}")
-    for k, v in dados.items():
+def _eh_tabelas(v) -> bool:
+    return isinstance(v, list) and bool(v) and isinstance(v[0], dict)
+
+
+def _tabela(nome: str, d: dict, linhas: list[str]) -> None:
+    simples = [(k, v) for k, v in d.items() if not isinstance(v, dict) and not _eh_tabelas(v)]
+    if nome and (simples or not any(isinstance(v, dict) for v in d.values())):
+        linhas += ["", f"[{nome}]"]
+    linhas += [f"{k} = {_valor(v)}" for k, v in simples]
+    for k, v in d.items():
         if isinstance(v, dict):
-            linhas += ["", f"[{k}]"] + [f"{kk} = {_valor(vv)}" for kk, vv in v.items()]
-    for k, v in dados.items():
-        if isinstance(v, list) and v and isinstance(v[0], dict):
+            _tabela(f"{nome}.{k}" if nome else k, v, linhas)
+    for k, v in d.items():
+        if _eh_tabelas(v):
             for t in v:
-                linhas += ["", f"[[{k}]]"] + [f"{kk} = {_valor(vv)}" for kk, vv in t.items()]
+                linhas += ["", f"[[{nome + '.' if nome else ''}{k}]]"] + [f"{kk} = {_valor(vv)}" for kk, vv in t.items()]
+
+
+def para_toml(dados: dict) -> str:
+    linhas: list[str] = []
+    _tabela("", dados, linhas)
     return "\n".join(linhas).lstrip("\n") + "\n"
 
 
@@ -170,6 +179,48 @@ def form_de_item(raw: dict) -> dict:
 
 # ---------------------------------------------------------------- ponte com a janela
 
+def _abrir_console(cmd: list[str]) -> None:
+    """Roda um comando numa janela própria (o login do programa abre o navegador)."""
+    flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
+    subprocess.Popen(cmd, creationflags=flags)
+
+
+_EFEITO_GERAL = ("O modelo muda o resultado: modelos menores são mais rápidos e gastam menos, "
+                 "mas erram mais ao descartar produtos e ao ler avaliações.")
+OPCOES = {
+    "claude_code": [
+        {"valor": "", "rotulo": "Padrão do Claude Code",
+         "efeito": "Usa o modelo que você deixou configurado no próprio Claude Code."},
+        {"valor": "haiku", "rotulo": "Haiku",
+         "efeito": "O mais rápido e o que menos gasta do seu plano. Bom para descartar o óbvio, mas erra mais: "
+                   "pode deixar passar produto ruim ou descartar um bom."},
+        {"valor": "sonnet", "rotulo": "Sonnet",
+         "efeito": "Equilíbrio: julgamentos mais confiáveis, com gasto e tempo médios."},
+        {"valor": "opus", "rotulo": "Opus",
+         "efeito": "O mais cuidadoso: melhor para ler avaliações e achar defeitos. Gasta bem mais do plano e demora mais."},
+    ],
+    "codex": [
+        {"valor": "", "rotulo": "Padrão do Codex",
+         "efeito": "Usa o modelo que você deixou configurado no próprio Codex."},
+        {"valor": "outro", "rotulo": "Outro (digite o nome)",
+         "efeito": "Use o nome exato de um modelo do seu plano. Modelos maiores costumam acertar mais e gastar mais do limite."},
+    ],
+    "claude": [
+        {"valor": "claude-haiku-5-5", "rotulo": "Claude Haiku 5.5",
+         "efeito": "US$ 0,10 / 0,50 por milhão de tokens. Barato e rápido, julgamentos mais simples."},
+        {"valor": "claude-sonnet-5-5", "rotulo": "Claude Sonnet 5.5",
+         "efeito": "US$ 2 / 10 por milhão de tokens. Equilíbrio entre qualidade e custo."},
+        {"valor": "claude-opus-5-5", "rotulo": "Claude Opus 5.5",
+         "efeito": "US$ 4 / 20 por milhão de tokens. O mais cuidadoso, melhor para ler avaliações; custa mais."},
+    ],
+    "openai": [
+        {"valor": "gpt-5-mini", "rotulo": "GPT-5 mini", "efeito": "Mais barato e rápido; julgamentos mais simples."},
+        {"valor": "gpt-5", "rotulo": "GPT-5", "efeito": "Mais cuidadoso; custa mais por uso."},
+        {"valor": "outro", "rotulo": "Outro (digite o nome)", "efeito": "Use o nome exato de um modelo da sua conta OpenAI."},
+    ],
+}
+
+
 class Api:
     def __init__(self, config_path: Path = RAIZ / "config.toml", segredos_path: Path = RAIZ / "segredos.toml",
                  estado_path: Path = RAIZ / "dados" / "estado.db", baixar=None,
@@ -181,6 +232,7 @@ class Api:
         self._baixar = baixar or zoom.baixar
         self._instantaneo = Path(instantaneo)
         self._localizar, self._rodar_cmd = localizar, rodar_cmd
+        self._abrir_terminal = _abrir_console
 
     def ofertas(self) -> dict:
         """Aba Ofertas: as melhores ofertas de cada produto na última verificação."""
@@ -220,12 +272,99 @@ class Api:
 
     def _status_salvo(self):
         st = Estado(self._estado_path).cache_ler("ia_status")
-        return json.loads(st) if st else None
+        try:
+            return json.loads(st) if st else None
+        except ValueError:
+            return None
 
     def _gravar_status(self, provedor: str, tipo: str, mensagem: str) -> None:
         Estado(self._estado_path).cache_gravar("ia_status", json.dumps(
             {"tipo": tipo, "mensagem": mensagem, "provedor": provedor,
              "quando": datetime.now().isoformat(timespec="seconds")}, ensure_ascii=False))
+
+    _LOGIN = {"claude_code": (["auth", "status"], ["auth", "login"], ["auth", "logout"]),
+              "codex": (["login", "status"], ["login"], ["logout"])}
+
+    def estado_login(self, id_: str) -> dict:
+        """Confere o login pelo próprio programa. Não gasta nada do plano."""
+        c = self._CLI.get(id_)
+        exe = self._localizar(c["exe"]) if c else None
+        if not exe:
+            return {"logado": False, "conta": "", "instalado": False}
+        try:
+            rc, out, err = self._rodar_cmd([exe, *self._LOGIN[id_][0]], "", 30, str(RAIZ))
+        except Exception:  # noqa: BLE001
+            return {"logado": False, "conta": "", "instalado": True}
+        if id_ == "claude_code":
+            try:
+                d = json.loads(out)
+            except ValueError:
+                d = {}
+            plano = (d.get("subscriptionType") or "").capitalize()
+            conta = " · ".join(x for x in (f"Plano {plano}" if plano else "", d.get("orgName") or "",
+                                           d.get("email") or "") if x)
+            return {"logado": bool(d.get("loggedIn")), "conta": conta, "instalado": True}
+        logado = rc == 0 and "logged in" in (out + err).lower() and "not logged" not in (out + err).lower()
+        conta = "Conta ChatGPT" if "chatgpt" in (out + err).lower() else ("Chave de API" if logado else "")
+        return {"logado": logado, "conta": conta, "instalado": True}
+
+    def conectar_ia(self, id_: str) -> dict:
+        """Conectar: se não tiver login, abre o login no navegador; se tiver, confere e liga."""
+        if id_ in self._CLI:
+            c = self._CLI[id_]
+            exe = self._localizar(c["exe"])
+            if not exe:
+                e = ErroIA("nao_instalado", c["nome"])
+                return {"ok": False, "tipo": e.tipo, "mensagem": e.mensagem}
+            st = self.estado_login(id_)
+            if not st["logado"]:
+                self._abrir_terminal([exe, *self._LOGIN[id_][1]])
+                return {"ok": False, "tipo": "aguardando_login",
+                        "mensagem": f"Abri o login do {c['nome']}: entre na sua conta no navegador que abriu. "
+                                    "Eu confiro sozinho quando terminar."}
+        r = self.testar_ia(id_)
+        if r["ok"]:
+            if id_ in self._CLI:
+                conta = self.estado_login(id_)["conta"]
+                r["mensagem"] = "Conectado" + (f" · {conta}" if conta else "") + "."
+            self.selecionar_ia(id_, _ler(self._config_path).get("ia", {}).get("provedor"))
+        return r
+
+    def desconectar_ia(self, id_: str) -> dict:
+        c = self._CLI.get(id_)
+        exe = self._localizar(c["exe"]) if c else None
+        if exe:
+            try:
+                self._rodar_cmd([exe, *self._LOGIN[id_][2]], "", 60, str(RAIZ))
+            except Exception:  # noqa: BLE001
+                pass
+        raw = _ler(self._config_path)
+        if raw.get("ia", {}).get("provedor") == id_:
+            self.selecionar_ia("")
+        Estado(self._estado_path).cache_gravar("ia_status", "")
+        return self.status_ia()
+
+    def salvar_modelo(self, id_: str, nivel: str, modelo: str, provedor_api: str | None = None) -> dict:
+        raw = _ler(self._config_path)
+        ia = raw.setdefault("ia", {})
+        prov = id_ if id_ in self._CLI else (provedor_api or ia.get("provedor"))
+        if prov not in ("claude_code", "codex", "claude", "openai") or nivel not in ("economica", "completa"):
+            return {"ok": False}
+        por = ia.setdefault("modelos", {}).setdefault(prov, {})
+        if (modelo or "").strip():
+            por[nivel] = modelo.strip()
+        else:
+            por.pop(nivel, None)
+            if not por:
+                ia["modelos"].pop(prov)
+            if not ia["modelos"]:
+                ia.pop("modelos")
+        _gravar(self._config_path, raw, CABECALHO)
+        return {"ok": True}
+
+    def _modelos(self, raw: dict, prov: str) -> dict:
+        cfg = ConfigIA(**{k: v for k, v in raw.get("ia", {}).items() if k in ConfigIA.__dataclass_fields__})
+        return {n: modelo_escolhido(cfg, prov, n) or "" for n in ("economica", "completa")}
 
     def status_ia(self) -> dict:
         raw, seg = _ler(self._config_path), _ler(self._segredos_path)
@@ -242,7 +381,8 @@ class Api:
                 except Exception:  # noqa: BLE001
                     pass
             conexoes.append({"id": id_, "nome": c["nome"], "detalhe": c["detalhe"], "tipo": "plano",
-                             "instalado": bool(exe), "versao": versao, "instalar": c["instalar"]})
+                             "instalado": bool(exe), "versao": versao, "instalar": c["instalar"],
+                             "opcoes": OPCOES[id_], "modelos": self._modelos(raw, id_)})
         conexoes.append({
             "id": "api", "nome": "Chave de API", "detalhe": "Anthropic ou OpenAI · pago por uso", "tipo": "api",
             "instalado": True, "versao": "", "instalar": "",
@@ -250,9 +390,12 @@ class Api:
             "tem_chave_claude": bool(seg.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")),
             "tem_chave_openai": bool(seg.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")),
             "limite_gasto_mensal": f'{raw.get("ia", {}).get("limite_gasto_mensal", 5):g}',
+            "opcoes_claude": OPCOES["claude"], "opcoes_openai": OPCOES["openai"],
+            "modelos": self._modelos(raw, prov if prov in ("claude", "openai") else "claude"),
         })
         selecionado = prov if prov in self._CLI else ("api" if prov in ("claude", "openai") else "")
-        return {"selecionado": selecionado, "conexoes": conexoes, "status": self._status_salvo()}
+        return {"selecionado": selecionado, "conexoes": conexoes, "status": self._status_salvo(),
+                "efeito_geral": _EFEITO_GERAL}
 
     def testar_ia(self, id_: str) -> dict:
         inicio = time.time()
@@ -540,9 +683,20 @@ footer .status{flex:1;color:var(--suave);font-size:12.5px}
 .link{background:none;border:0;color:var(--texto);font-weight:600;font-size:13px;padding:4px 2px}
 .link:hover{color:var(--acento)}
 .conexoes{display:flex;flex-direction:column;gap:8px}
-.conexao{display:grid;grid-template-columns:auto 1fr auto;gap:2px 14px;align-items:center;border:1px solid var(--borda);
+.conexao{display:grid;grid-template-columns:1fr auto auto;gap:2px 14px;align-items:center;border:1px solid var(--borda);
   border-radius:12px;padding:14px 16px;background:var(--cartao);transition:border-color .15s,box-shadow .15s}
 .conexao.sel{border-color:var(--acento);box-shadow:0 0 0 1px var(--acento)}
+.chave{width:40px;height:22px;border-radius:999px;background:var(--borda-forte);border:0;
+  position:relative;padding:0;flex:none;transition:background .15s}
+.chave::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;
+  background:#FFFFFF;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.chave[aria-checked="true"]{background:var(--acento)}
+.chave[aria-checked="true"]::after{transform:translateX(18px)}
+.chave:disabled{opacity:.4;cursor:not-allowed}
+.modelos{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
+.modelos .aviso-modelo{grid-column:1/3}
+.modelos select,.modelos input{padding:7px 10px}
+.btn.discreto{color:var(--suave)}
 .caixa{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--borda-forte);background:transparent;
   display:grid;place-items:center;color:transparent;padding:0}
 .caixa:disabled{opacity:.4;cursor:not-allowed}
@@ -552,7 +706,7 @@ footer .status{flex:1;color:var(--suave);font-size:12.5px}
 .cx-info span{color:var(--suave);font-size:12.5px}
 .cx-acoes{display:flex;align-items:center;gap:8px}
 .selo{font-size:11.5px;font-weight:650;padding:2px 8px;border-radius:6px;background:var(--bom-bg);color:var(--bom-tx)}
-.cx-extra{grid-column:2/4;margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.cx-extra{grid-column:1/4;margin-top:10px;display:flex;flex-direction:column;gap:8px}
 .cx-dica{color:var(--suave);font-size:12px}
 .codigo{display:flex;align-items:center;gap:8px;background:var(--fundo);border:1px solid var(--borda);border-radius:8px;padding:8px 8px 8px 12px}
 .codigo code{flex:1;font:12.5px/1.4 "Cascadia Mono",Consolas,monospace;overflow-x:auto;white-space:nowrap}
@@ -666,6 +820,16 @@ async function salvarGeral(ev){
   D = r.dados; render(); status('Configurações salvas.');
 }
 
+document.addEventListener('change', async e => {
+  const sm = e.target.closest('[data-modelo]');
+  if (sm && api()) { const v = sm.value === 'outro' ? '' : sm.value;
+    const c = IA.conexoes.find(x => x.id === sm.dataset.id); c.modelos[sm.dataset.modelo] = sm.value === 'outro' ? 'outro:' : v;
+    if (sm.value !== 'outro') { await api().salvar_modelo(sm.dataset.id, sm.dataset.modelo, v, sm.dataset.prov); status('Modelo salvo.'); }
+    renderIA(); }
+  const mo = e.target.closest('[data-modelo-outro]');
+  if (mo && api() && mo.value.trim()) { await api().salvar_modelo(mo.dataset.id, mo.dataset.modeloOutro, mo.value.trim(), mo.dataset.prov);
+    IA.conexoes.find(x => x.id === mo.dataset.id).modelos[mo.dataset.modeloOutro] = mo.value.trim(); status('Modelo salvo.'); }
+});
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-escolha]');
   if (t) { raiz.dataset.tema = t.dataset.escolha; marcarTema(); if (api()) api().salvar_tema(t.dataset.escolha); }
@@ -689,13 +853,18 @@ document.addEventListener('click', async e => {
   const lk = e.target.closest('[data-link]'); if (lk && api()) api().abrir(lk.dataset.link);
   const ir = e.target.closest('[data-ir]'); if (ir) document.querySelector(`[data-aba="${ir.dataset.ir}"]`).click();
   if (e.target.closest('#verificar-ia')) { testes = {}; carregarIA(); }
-  const sl = e.target.closest('[data-selecionar]');
-  if (sl && api() && !sl.disabled) { const id = IA.selecionado === sl.dataset.selecionar ? '' : sl.dataset.selecionar;
-    if (id === 'api') { abertoApi = true; IA.selecionado = 'api'; renderIA(); }
-    else { IA = await api().selecionar_ia(id, null); renderIA(); status(id ? 'IA selecionada.' : 'Pesquisa com IA desligada.'); } }
-  const ti = e.target.closest('[data-testar-ia]');
-  if (ti && api()) { const id = ti.dataset.testarIa; testes[id] = {tipo: 'testando', mensagem: 'Conectando… pode levar alguns segundos.'};
-    renderIA(); testes[id] = await api().testar_ia(id); renderIA(); }
+  const lg = e.target.closest('[data-ligar]');
+  if (lg && api() && !lg.disabled) { const id = lg.dataset.ligar;
+    if (IA.selecionado === id) { IA = await api().selecionar_ia('', null); renderIA(); status('Pesquisa com IA desligada.'); }
+    else if (id === 'api') { abertoApi = true; IA.selecionado = 'api'; renderIA(); }
+    else conectar(id); }
+  const cn = e.target.closest('[data-conectar]'); if (cn && api()) conectar(cn.dataset.conectar);
+  const dc = e.target.closest('[data-desconectar]');
+  if (dc && api()) { if (dc.dataset.conf) { IA = await api().desconectar_ia(dc.dataset.desconectar);
+      delete testes[dc.dataset.desconectar]; renderIA(); status('Desconectado.'); }
+    else { dc.dataset.conf = '1';
+      dc.textContent = dc.dataset.desconectar === 'claude_code' ? 'Confirmar (sai do Claude Code no PC todo)' : 'Confirmar';
+      setTimeout(() => { if (dc.isConnected) { delete dc.dataset.conf; dc.textContent = 'Desconectar'; } }, 4000); } }
   const ins = e.target.closest('[data-instalar]'); if (ins && api()) status(await api().instalar_ia(ins.dataset.instalar));
   const ent = e.target.closest('[data-entrar]'); if (ent && api()) status(await api().entrar_ia(ent.dataset.entrar));
   const cp = e.target.closest('[data-copiar]'); if (cp) { navigator.clipboard.writeText(cp.dataset.copiar); cp.textContent = 'Copiado'; }
@@ -703,7 +872,8 @@ document.addEventListener('click', async e => {
   if (e.target.closest('[data-salvar-api]') && api()) { const prov = segValor('provedor') || 'claude';
     const r = await api().salvar_geral({provedor: prov, chave: $('#g-chave').value, limite_gasto_mensal: $('#g-limite').value});
     if (!r.ok) { status(r.erro); return; }
-    IA = await api().selecionar_ia('api', prov); abertoApi = false; renderIA(); status('Chave salva. Clique em Conectar para conferir.'); }
+    abertoApi = false; testes.api = {tipo: 'testando', mensagem: 'Conferindo a chave…'}; renderIA();
+    testes.api = await api().conectar_ia('api'); IA = await api().selecionar_ia('api', prov); renderIA(); }
   if (e.target.closest('#verificar') && api()) { status(await api().verificar_agora()); acompanhar(); }
   if (e.target.closest('#testar') && api()) status(await api().testar_aviso());
 });
@@ -713,16 +883,34 @@ marcarTema();
 
 let ultimo = null, IA = null, testes = {}, abertoApi = false;
 const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>';
+function opcoesModelo(c, prov){
+  return c.tipo === 'api' ? (prov === 'openai' ? c.opcoes_openai : c.opcoes_claude) : c.opcoes;
+}
+function blocoModelos(c){
+  const prov = c.tipo === 'api' ? c.provedor_api : c.id, ops = opcoesModelo(c, prov);
+  const campo = (nivel, rot) => {
+    const atual = c.modelos[nivel] || '', conhecido = ops.some(o => o.valor === atual);
+    const valor = conhecido ? atual : 'outro', op = ops.find(o => o.valor === valor) || ops[0];
+    return `<div class="campo"><label>${rot}</label>
+      <select data-modelo="${nivel}" data-id="${c.id}" data-prov="${prov}">${ops.map(o =>
+        `<option value="${esc(o.valor)}" ${o.valor === valor ? 'selected' : ''}>${esc(o.rotulo)}</option>`).join('')}</select>
+      ${valor === 'outro' ? `<input data-modelo-outro="${nivel}" data-id="${c.id}" data-prov="${prov}"
+        value="${conhecido ? '' : esc(atual)}" placeholder="Nome do modelo">` : ''}
+      <small>${esc(op.efeito)}</small></div>`;
+  };
+  return `<div class="modelos"><p class="cx-dica aviso-modelo">${esc(IA.efeito_geral)}</p>
+    ${campo('economica', 'Pesquisa econômica')}${campo('completa', 'Pesquisa completa')}</div>`;
+}
 function rowIA(c){
-  const sel = IA.selecionado === c.id, t = testes[c.id] ||
+  const ligado = IA.selecionado === c.id, t = testes[c.id] ||
     (IA.status && IA.status.provedor === (c.id === 'api' ? c.provedor_api : c.id) ? IA.status : null);
+  const conectado = t && t.tipo === 'ok';
   let acoes = '', extra = '';
-  if (c.tipo === 'plano' && t && t.tipo === 'ok') acoes += '<span class="selo">plano</span>';
   if (!c.instalado) acoes += `<button class="btn" data-instalar="${c.id}">Instalar</button>`;
   else if (c.tipo === 'api') acoes += `<button class="btn" data-configurar-api>${abertoApi ? 'Fechar' : 'Configurar'}</button>`;
-  else if (t && t.tipo === 'login') acoes += `<button class="btn primario" data-entrar="${c.id}">Entrar</button>`;
-  if (c.instalado) acoes += `<button class="btn" data-testar-ia="${c.id}">Conectar</button>`;
-  if (t && t.tipo) extra += `<p class="cx-status ${esc(t.tipo)}">${esc(t.mensagem)}</p>`;
+  else if (conectado) acoes += `<span class="selo">plano</span><button class="btn discreto" data-desconectar="${c.id}">Desconectar</button>`;
+  else if (!(t && ['testando', 'aguardando_login'].includes(t.tipo))) acoes += `<button class="btn primario" data-conectar="${c.id}">Conectar</button>`;
+  if (t && t.tipo) extra += `<p class="cx-status ${esc(t.tipo === 'aguardando_login' ? 'testando' : t.tipo)}">${esc(t.mensagem)}</p>`;
   if (!c.instalado) extra += `<p class="cx-dica">Ou cole no PowerShell:</p>
     <div class="codigo"><code>${esc(c.instalar)}</code><button class="btn" data-copiar="${esc(c.instalar)}">Copiar</button></div>`;
   if (c.tipo === 'api' && abertoApi) {
@@ -734,14 +922,32 @@ function rowIA(c){
         placeholder="${tem ? 'Chave já salva (deixe em branco para manter)' : 'Cole a chave aqui'}"></div>
       <div class="campo"><label for="g-limite">Gasto máximo por mês (US$)</label><input id="g-limite" inputmode="decimal"
         value="${esc(c.limite_gasto_mensal)}"><small>Ao chegar nele, a IA pausa até o mês virar.</small></div>
-      <div class="botoes"><button class="btn primario" data-salvar-api>Salvar e usar</button></div>`;
+      <div class="botoes"><button class="btn primario" data-salvar-api>Salvar e conectar</button></div>`;
   }
+  if (ligado && c.instalado) extra += blocoModelos(c);
   const versao = c.versao ? ' · ' + esc(c.versao) : '';
-  return `<div class="conexao${sel ? ' sel' : ''}">
-    <button class="caixa" data-selecionar="${c.id}" aria-pressed="${sel}" aria-label="Usar ${esc(c.nome)}"
-      ${c.instalado ? '' : 'disabled'}>${CHECK}</button>
+  return `<div class="conexao${ligado ? ' sel' : ''}">
     <div class="cx-info"><b>${esc(c.nome)}</b><span>${c.instalado ? esc(c.detalhe) + versao : 'Não instalado'}</span></div>
-    <div class="cx-acoes">${acoes}</div>${extra ? `<div class="cx-extra">${extra}</div>` : ''}</div>`;
+    <div class="cx-acoes">${acoes}</div>
+    <button class="chave" role="switch" data-ligar="${c.id}" aria-checked="${ligado}" aria-label="Usar ${esc(c.nome)}"
+      title="${ligado ? 'Ligado' : 'Desligado'}" ${c.instalado ? '' : 'disabled'}></button>
+    ${extra ? `<div class="cx-extra">${extra}</div>` : ''}</div>`;
+}
+async function conectar(id){
+  testes[id] = {tipo: 'testando', mensagem: 'Conferindo o login…'}; renderIA();
+  let r = await api().conectar_ia(id);
+  if (r.tipo === 'aguardando_login') {
+    testes[id] = r; renderIA();
+    for (let i = 0; i < 60; i++) {
+      await new Promise(ok => setTimeout(ok, 3000));
+      if ((await api().estado_login(id)).logado) {
+        testes[id] = {tipo: 'testando', mensagem: 'Login feito! Conferindo a conexão…'}; renderIA();
+        r = await api().conectar_ia(id); break;
+      }
+    }
+    if (r.tipo === 'aguardando_login') r = {tipo: 'login', mensagem: 'Não vi o login terminar. Clique em Conectar para tentar de novo.'};
+  }
+  testes[id] = r; IA = await api().status_ia(); renderIA();
 }
 function renderIA(){ if (IA) $('#conexoes-ia').innerHTML = IA.conexoes.map(rowIA).join(''); }
 async function carregarIA(){

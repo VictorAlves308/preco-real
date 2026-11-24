@@ -222,3 +222,96 @@ def test_faixa_de_erro_da_ia_nas_ofertas(tmp_path):
 def test_html_conexoes_ia():
     html = html_cadastro()
     assert 'id="conexoes-ia"' in html and 'id="verificar-ia"' in html
+
+
+def test_modelos_na_tela(tmp_path):
+    api = _api_ia(tmp_path, lambda n: f"C:/bin/{n}.cmd")
+    cc = next(c for c in api.status_ia()["conexoes"] if c["id"] == "claude_code")
+    valores = [o["valor"] for o in cc["opcoes"]]
+    assert valores[:4] == ["", "haiku", "sonnet", "opus"]
+    assert all(o["efeito"] for o in cc["opcoes"])
+    assert cc["modelos"] == {"economica": "haiku", "completa": ""}  # padrões atuais
+    api.salvar_modelo("claude_code", "completa", "opus")
+    cc = next(c for c in api.status_ia()["conexoes"] if c["id"] == "claude_code")
+    assert cc["modelos"]["completa"] == "opus"
+    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").ia.modelos["claude_code"]["completa"] == "opus"
+    api.salvar_modelo("claude_code", "completa", "")
+    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").ia.modelos.get("claude_code", {}).get("completa") is None
+
+
+def test_modelos_api_por_provedor(tmp_path):
+    api = _api_ia(tmp_path, lambda n: None)
+    conx = next(c for c in api.status_ia()["conexoes"] if c["id"] == "api")
+    assert {o["valor"] for o in conx["opcoes_claude"]} >= {"claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"}
+    assert any(o["valor"] == "outro" for o in conx["opcoes_openai"])
+
+
+class Terminal:
+    def __init__(self):
+        self.abertos = []
+
+    def __call__(self, cmd):
+        self.abertos.append(cmd)
+
+
+def _runner_login(logado, resposta_ok=True):
+    import json as _json
+
+    def r(cmd, entrada, timeout, cwd):
+        if cmd[1:3] == ["auth", "status"]:
+            return (0 if logado["claude"] else 1), _json.dumps(
+                {"loggedIn": logado["claude"], "subscriptionType": "team", "orgName": "Empresa Exemplo",
+                 "email": "a@b.com"}), ""
+        if cmd[1:3] == ["login", "status"]:
+            return (0, "Logged in using ChatGPT", "") if logado["codex"] else (1, "", "Not logged in")
+        if "auth" in cmd and "logout" in cmd:
+            logado["claude"] = False
+            return 0, "", ""
+        if cmd[1:] == ["logout"]:
+            logado["codex"] = False
+            return 0, "", ""
+        if "-p" in cmd:
+            return 0, _json.dumps({"is_error": False, "result": "OK"}), ""
+        if "exec" in cmd:
+            from pathlib import Path as _P
+            _P(cmd[cmd.index("-o") + 1]).write_text("OK", encoding="utf-8")
+            return 0, "", ""
+        return 0, "v1.0", ""
+    return r
+
+
+def test_conectar_sem_login_abre_navegador(tmp_path):
+    logado = {"claude": False, "codex": False}
+    api = _api_ia(tmp_path, lambda n: f"C:/bin/{n}.cmd", _runner_login(logado))
+    term = Terminal()
+    api._abrir_terminal = term
+    r = api.conectar_ia("codex")
+    assert r["tipo"] == "aguardando_login" and "navegador" in r["mensagem"]
+    assert term.abertos == [["C:/bin/codex.cmd", "login"]]
+    assert api.estado_login("codex")["logado"] is False
+    logado["codex"] = True  # pessoa terminou o login no navegador
+    assert api.estado_login("codex")["logado"] is True
+    r = api.conectar_ia("codex")
+    assert r["ok"] and r["tipo"] == "ok" and "ChatGPT" in r["mensagem"]
+    assert api.status_ia()["selecionado"] == "codex"  # conectar liga a chave
+
+
+def test_conectar_claude_mostra_plano(tmp_path):
+    logado = {"claude": True, "codex": True}
+    api = _api_ia(tmp_path, lambda n: f"C:/bin/{n}.cmd", _runner_login(logado))
+    r = api.conectar_ia("claude_code")
+    assert r["ok"] and "Plano Team" in r["mensagem"] and "Empresa Exemplo" in r["mensagem"]
+
+
+def test_desconectar(tmp_path):
+    logado = {"claude": True, "codex": True}
+    api = _api_ia(tmp_path, lambda n: f"C:/bin/{n}.cmd", _runner_login(logado))
+    api.conectar_ia("codex")
+    st = api.desconectar_ia("codex")
+    assert logado["codex"] is False and st["selecionado"] == ""
+
+
+def test_para_toml_tabela_dentro_de_tabela():
+    dados = {"ia": {"provedor": "codex", "modelos": {"claude_code": {"completa": "opus"}, "codex": {"economica": "x"}}},
+             "itens": [{"nome": "A", "buscas": ["a"]}]}
+    assert tomllib.loads(para_toml(dados)) == dados

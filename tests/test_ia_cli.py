@@ -123,3 +123,15 @@ def test_pesquisador_limpa_erro_quando_volta(tmp_path):
     cfg = Config(itens=[], ia=ConfigIA(provedor="claude_code"))
     Pesquisador(cfg, e, {"economica": Ok()}).filtrar(Item(nome="X", pesquisa="economica"), ["A"])
     assert json.loads(e.cache_ler("ia_status"))["tipo"] == "ok"
+
+
+def test_modelo_por_provedor(tmp_path, monkeypatch):
+    import precos.ia as ia
+    from precos.config import carregar
+    c = tmp_path / "c.toml"
+    c.write_text('[ia]\nprovedor = "claude_code"\n\n[ia.modelos.claude_code]\neconomica = "sonnet"\n', encoding="utf-8")
+    cfg = carregar(c, tmp_path / "s.toml")
+    assert cfg.ia.modelos == {"claude_code": {"economica": "sonnet"}}
+    monkeypatch.setattr(ia.shutil, "which", lambda n: f"C:/bin/{n}.cmd")
+    assert criar(cfg.ia, "economica", {}).modelo == "sonnet"
+    assert criar(cfg.ia, "completa", {}).modelo is None  # sem escolha: padrão do programa

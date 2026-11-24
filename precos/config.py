@@ -41,6 +41,7 @@ class ConfigIA:
     modelo_completo: str | None = None
     preco_entrada: float | None = None  # US$ por 1 milhão de tokens (modelos fora da tabela)
     preco_saida: float | None = None
+    modelos: dict = field(default_factory=dict)  # {provedor: {"economica": nome, "completa": nome}}
 
 
 @dataclass

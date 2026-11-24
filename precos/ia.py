@@ -209,6 +209,18 @@ class Codex:
 EXECUTAVEIS = {"claude_code": "claude", "codex": "codex"}
 
 
+def modelo_escolhido(cfg: ConfigIA, provedor: str, nivel: str) -> str | None:
+    """Modelo escolhido para o provedor (tela), senão o campo antigo, senão o padrão."""
+    escolhido = (cfg.modelos.get(provedor) or {}).get(nivel)
+    if escolhido:
+        return escolhido
+    if provedor == cfg.provedor:
+        antigo = cfg.modelo_completo if nivel == "completa" else cfg.modelo_economico
+        if antigo:
+            return antigo
+    return PADRAO.get(provedor, {}).get(nivel)
+
+
 def criar(cfg: ConfigIA, nivel: str, chaves: dict):
     """Devolve o provedor para o nível ('economica' ou 'completa'), ou None se não houver IA."""
     if cfg.provedor not in PADRAO:
@@ -218,14 +230,13 @@ def criar(cfg: ConfigIA, nivel: str, chaves: dict):
         if not exe:
             log.info("IA: %s não está instalado, usando só as regras", NOMES[cfg.provedor])
             return None
-        modelo = (cfg.modelo_completo if nivel == "completa" else cfg.modelo_economico) or PADRAO[cfg.provedor][nivel]
-        return (ClaudeCode if cfg.provedor == "claude_code" else Codex)(exe, modelo)
+        return (ClaudeCode if cfg.provedor == "claude_code" else Codex)(exe, modelo_escolhido(cfg, cfg.provedor, nivel))
     nome_chave = "anthropic_api_key" if cfg.provedor == "claude" else "openai_api_key"
     chave = chaves.get(nome_chave) or os.environ.get(nome_chave.upper())
     if not chave:
         log.info("IA: sem %s, usando só as regras", nome_chave)
         return None
-    modelo = (cfg.modelo_completo if nivel == "completa" else cfg.modelo_economico) or PADRAO[cfg.provedor][nivel]
+    modelo = modelo_escolhido(cfg, cfg.provedor, nivel)
     preco = (cfg.preco_entrada, cfg.preco_saida) if cfg.preco_entrada is not None and cfg.preco_saida is not None else None
     cls = Claude if cfg.provedor == "claude" else OpenAIProv
     return cls(modelo, api_key=chave, preco=preco)
