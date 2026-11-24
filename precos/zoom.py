@@ -36,6 +36,7 @@ class Oferta:
     sem_juros: bool
     marketplace: bool
     link: str
+    imagem: str = ""
 
 
 @dataclass
@@ -58,6 +59,7 @@ class Hit:
     sem_juros: bool
     marketplace: bool
     loja: str = ""
+    imagem: str = ""
 
 
 def _sem_juros(parcelas, total) -> bool:
@@ -96,6 +98,7 @@ def parse_produto(estado: dict, url: str) -> Produto:
                 sem_juros=_sem_juros(parcelas, total),
                 marketplace=bool(o.get("sellerIsMarketplace")),
                 link=f"{BASE}/lead?oid={o['id']}",
+                imagem=o.get("imageUrl") or "",
             )
         )
     dias = (
@@ -132,6 +135,7 @@ def parse_busca(estado: dict) -> list[Hit]:
                 parcelas=int(parcelas) if parcelas else None,
                 sem_juros=_sem_juros(parcelas, total),
                 marketplace=bool(h.get("marketplace")),
+                imagem=h.get("image") or "",
                 loja=h.get("merchantName") or (h.get("bestOffer") or {}).get("merchantName", ""),
             )
         )

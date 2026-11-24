@@ -62,3 +62,10 @@ def test_parse_busca_loja():
     hits = parse_busca(est)
     assert hits[0].loja == "Magazine Luiza"
     assert hits[1].loja == "KaBuM!"
+
+
+def test_imagem_do_produto_e_da_busca():
+    p = parse_produto(estado("zoom_produto_5700x.json"), URL_CPU)
+    assert p.ofertas[0].imagem.startswith("https://image.zst.com.br/")
+    hits = parse_busca(estado("zoom_busca_monitor.json"))
+    assert hits[0].imagem.startswith("https://")

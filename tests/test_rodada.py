@@ -202,3 +202,14 @@ def test_ia_item_so_com_descricao_usa_buscas_da_ia(tmp_path):
     achados = _rodar_ia([item], {url: html_de(estado("zoom_busca_monitor.json"))},
                         tmp_path, FakePesq(buscas=[url]))
     assert len(achados) == 3
+
+
+def test_achado_leva_historico_do_produto(tmp_path):
+    est = copy.deepcopy(estado("zoom_produto_5700x.json"))
+    for o in est["offers"]["offerList"]:
+        o["price"] = 800.0  # bem abaixo da mediana: promoção real
+        o["totalParceledValue"] = 900.0
+    achados = _rodar([_cpu()], {URL_CPU: html_de(est)}, tmp_path, Avisar())
+    assert achados[0].veredito == "real"
+    assert len(achados[0].historico) >= 30
+    assert achados[0].oferta.imagem

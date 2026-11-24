@@ -78,12 +78,12 @@ def test_whatsapp_nao_configurado():
 def test_dados_janela():
     from precos.avisos import dados_janela
     d = dados_janela([Achado("Ryzen 7 5700X", _oferta(), "real", ["painel não confirmado"])])[0]
-    assert d == {
+    assert d.items() >= {
         "item": "Ryzen 7 5700X", "nome": "Ryzen 7 5700X", "loja": "KaBuM!",
         "preco": "R$ 1.529,40", "parcelas": "em 10x sem juros", "pix": "PIX R$ 1.299,99",
         "veredito": "real", "rotulo": "Promoção real", "tags": ["painel não confirmado"],
         "frete": "frete: confira na loja", "link": "https://www.zoom.com.br/lead?oid=743605209",
-    }
+    }.items()
 
 
 def test_janela_monta_um_cartao_por_oferta():
@@ -98,3 +98,13 @@ def test_janela_monta_um_cartao_por_oferta():
         assert len(cartoes) == 2
     finally:
         root.destroy()
+
+
+def test_dados_janela_resumo_historico():
+    from precos.avisos import dados_janela
+    a = Achado("x", _oferta(), "real", [], historico=[1000.0] * 20 + [900.0, 1100.0])
+    d = dados_janela([a])[0]
+    assert d["historico"][-1] == 1100.0
+    assert d["minimo"] == "R$ 900,00"
+    assert d["mediana"] == "R$ 1.000,00"
+    assert dados_janela([Achado("x", _oferta(), "real", [])])[0]["historico"] == []

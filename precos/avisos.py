@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from statistics import median
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -30,6 +31,7 @@ class Achado:
     oferta: Oferta
     veredito: str
     tags: list[str] = field(default_factory=list)
+    historico: list[float] = field(default_factory=list)  # preços diários (à vista)
 
 
 def moeda(v: float) -> str:
@@ -58,7 +60,10 @@ def dados_janela(achados: list[Achado]) -> list[dict]:
             "preco": moeda(a.oferta.total_parcelado), "parcelas": _parcelas(a.oferta),
             "pix": f"PIX {moeda(a.oferta.preco_vista)}", "veredito": a.veredito,
             "rotulo": ROTULOS_JANELA.get(a.veredito, a.veredito), "tags": list(a.tags),
-            "frete": _frete(a.oferta.loja), "link": a.oferta.link,
+            "frete": _frete(a.oferta.loja), "link": a.oferta.link, "imagem": a.oferta.imagem,
+            "historico": list(a.historico[-90:]),
+            "minimo": moeda(min(a.historico)) if a.historico else "",
+            "mediana": moeda(median(a.historico)) if a.historico else "",
         }
         for a in achados
     ]

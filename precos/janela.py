@@ -168,7 +168,16 @@ def main(caminho: str) -> None:
         os.remove(caminho)
     except OSError:
         pass
-    mostrar(dados["titulo"], dados.get("itens", []), dados.get("corpo", ""), dados.get("links", []))
+    itens = dados.get("itens", [])
+    if itens:
+        try:  # janela em HTML (Edge WebView2); se não der, cai para a versão tkinter
+            from . import janela_web
+
+            janela_web.mostrar(dados["titulo"], itens, f"{datetime.now():%H:%M}")
+            return
+        except Exception:  # noqa: BLE001
+            pass
+    mostrar(dados["titulo"], itens, dados.get("corpo", ""), dados.get("links", []))
 
 
 if __name__ == "__main__":

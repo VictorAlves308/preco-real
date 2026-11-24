@@ -23,12 +23,13 @@ MAX_PAGINAS_BUSCA = 8
 def _oferta_de_hit(h: Hit) -> Oferta:
     oid = parse_qs(urlparse(h.url).query).get("oid", [h.url])[0]
     return Oferta(oid, h.nome, h.loja, h.preco_vista, h.total_parcelado, h.parcelas, None,
-                  h.sem_juros, h.marketplace, h.url)
+                  h.sem_juros, h.marketplace, h.url, h.imagem)
 
 
 def _candidatos_produto(html: str, url: str, item: Item, hoje: date, tags: list[str]):
     p = zoom.parse_produto(zoom.extrair_estado(html), url)
-    return [(o, veredito(o.preco_vista, p.historico, hoje), tags)
+    hist = [v for d, v in p.historico if (hoje - d).days <= 90]
+    return [(o, veredito(o.preco_vista, p.historico, hoje), tags, hist)
             for o in ordenar([o for o in p.ofertas if elegivel(o, item)])]
 
 
@@ -65,7 +66,7 @@ def _candidatos(item: Item, baixar, hoje: date, dormir, pesquisador=None):
         if "/lead?" in h.url:
             o = _oferta_de_hit(h)
             if elegivel(o, item):
-                out.append((o, "sem_historico", tags))
+                out.append((o, "sem_historico", tags, []))
             continue
         dormir(random.uniform(3, 6))
         try:
@@ -84,7 +85,7 @@ def _chave(item: Item, o: Oferta):
 def _escolher(item: Item, cands, estado: Estado, pesquisador=None) -> list[Achado]:
     menor = estado.menor_visto(item.nome)
     escolhidos, vistos, vetados = [], set(), set()
-    for o, v, tags in sorted(cands, key=lambda c: _chave(item, c[0])):
+    for o, v, tags, hist in sorted(cands, key=lambda c: _chave(item, c[0])):
         if o.offer_id in vistos or v == "maquiada":
             continue
         # Só "real" passa direto. "sem_historico" e "normal" só avisam se forem mais baratos que
@@ -106,7 +107,7 @@ def _escolher(item: Item, cands, estado: Estado, pesquisador=None) -> list[Achad
             if av and av[0] is not None:
                 tags.append(f"nota {av[0]}/10 · {av[1]}")
         vistos.add(o.offer_id)
-        escolhidos.append(Achado(item.nome, o, v, tags))
+        escolhidos.append(Achado(item.nome, o, v, tags, hist))
         if len(escolhidos) == MAX_POR_ITEM:
             break
     validos = [c[0].total_parcelado for c in cands if c[0].offer_id not in vetados]
