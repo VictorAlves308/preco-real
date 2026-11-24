@@ -389,3 +389,14 @@ def test_html_intervalos():
     for v in ('data-v="5"', 'data-v="10"', 'data-v="personalizado"', 'id="intervalo-min"'):
         assert v in html
     assert "bloquear" in html  # aviso sobre intervalos curtos
+
+
+def test_cep_configuravel(tmp_path):
+    api = _api_ia(tmp_path, lambda n: None)
+    assert api.salvar_geral({"cep": "01310100"})["ok"]
+    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").cep == "01310-100"
+    assert api.dados()["geral"]["cep"] == "01310-100"
+    assert api.salvar_geral({"cep": "123"}) == {"ok": False, "erro": "CEP inválido: use 8 números, ex.: 01310-100."}
+    api.salvar_geral({"cep": ""})
+    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").cep is None
+    assert 'id="g-cep"' in html_cadastro()

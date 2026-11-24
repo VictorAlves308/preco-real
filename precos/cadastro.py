@@ -596,6 +596,7 @@ class Api:
             "geral": {
                 "tema": raw.get("aparencia", {}).get("tema", "sistema"),
                 "ntfy_topico": seg.get("ntfy_topico", ""),
+                "cep": seg.get("cep", ""),
                 "provedor": ia.get("provedor", "nenhum"),
                 "limite_gasto_mensal": f'{ia.get("limite_gasto_mensal", 5):g}',
                 "tem_chave_claude": bool(seg.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")),
@@ -641,11 +642,20 @@ class Api:
             ia["provedor"] = form["provedor"] if form["provedor"] in ("claude", "openai") else "nenhum"
         if limite is not None:
             ia["limite_gasto_mensal"] = limite
-        topico = (form.get("ntfy_topico") or "").strip()
-        if topico:
-            seg["ntfy_topico"] = topico
-        else:
-            seg.pop("ntfy_topico", None)
+        if "cep" in form:
+            dig = re.sub(r"\D", "", form.get("cep") or "")
+            if dig and len(dig) != 8:
+                return {"ok": False, "erro": "CEP inválido: use 8 números, ex.: 01310-100."}
+            if dig:
+                seg["cep"] = f"{dig[:5]}-{dig[5:]}"
+            else:
+                seg.pop("cep", None)
+        if "ntfy_topico" in form:
+            topico = (form.get("ntfy_topico") or "").strip()
+            if topico:
+                seg["ntfy_topico"] = topico
+            else:
+                seg.pop("ntfy_topico", None)
         chave = (form.get("chave") or "").strip()
         if chave and ia.get("provedor") in ("claude", "openai"):
             seg["anthropic_api_key" if ia["provedor"] == "claude" else "openai_api_key"] = chave
@@ -870,7 +880,7 @@ function render(){
     </article>`).join('')
     : '<div class="vazio"><b>Nada sendo monitorado</b>Adicione o primeiro produto para começar.</div>';
   const g = D.geral;
-  $('#g-ntfy').value = g.ntfy_topico;
+  $('#g-ntfy').value = g.ntfy_topico; $('#g-cep').value = g.cep || '';
 }
 
 function abrirForm(i){
@@ -909,7 +919,7 @@ async function salvarForm(ev){
 async function salvarGeral(ev){
   ev.preventDefault();
   if (!api()) return;
-  const r = await api().salvar_geral({ntfy_topico: $('#g-ntfy').value, tema: raiz.dataset.tema});
+  const r = await api().salvar_geral({ntfy_topico: $('#g-ntfy').value, cep: $('#g-cep').value, tema: raiz.dataset.tema});
   if (!r.ok) { status(r.erro); return; }
   D = r.dados; render(); status('Configurações salvas.');
 }
@@ -1155,6 +1165,10 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
         '<input id="g-ntfy" placeholder="Ex.: precos-k7x9q2" autocomplete="off">'
         '<button type="button" class="btn" id="testar">Enviar teste</button></div>'
         "<small>Use um nome difícil de adivinhar: quem souber o nome lê os avisos.</small></div>"
+        '<div class="campo"><label for="g-cep">Seu CEP</label>'
+        '<input id="g-cep" inputmode="numeric" autocomplete="postal-code" placeholder="Ex.: 01310-100" maxlength="9">'
+        '<small>Guardado só no seu PC. Ainda não é usado: o cálculo de frete por CEP está em desenvolvimento. '
+        'Por enquanto, o aviso diz "Frete: confira na loja" (no Mercado Livre, "Frete grátis (Meli+)").</small></div>'
         '<div class="botoes"><button type="submit" class="btn primario">Salvar</button></div></div></form>'
         '<section class="cartao secao" style="margin-top:14px"><h3>Verificação automática</h3>'
         '<p class="dica">O monitor busca preços novos sozinho, mesmo com este app fechado. Só precisa do PC ligado.</p>'
