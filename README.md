@@ -1,8 +1,15 @@
-# Monitor de preços
+# Preço Real
+
+**Monitor de preços que separa promoção de verdade de desconto maquiado.**
 
 Acompanha o preço do que você quer comprar em várias lojas, confere no histórico se a promoção é **de verdade** e te avisa **na tela do PC e no celular**.
 
 Você escreve o que buscaria numa loja (ex.: `smart tv 32`, `monitor 144hz`, `ryzen 7 5700x`), sem colar link. O monitor procura no [Zoom](https://www.zoom.com.br) (com o Buscapé de reserva), compara as lojas e avisa só quando vale a pena.
+
+<p align="center">
+  <img src="docs/img/aviso.png" alt="Janela de aviso com duas ofertas, foto, preço no cartão e gráfico de 90 dias" width="380">
+  <img src="docs/img/ofertas.png" alt="Aba Ofertas do app com o Ryzen marcado como desconto maquiado e um monitor abaixo do normal" width="430">
+</p>
 
 ## O que ele faz
 
@@ -21,13 +28,17 @@ Você escreve o que buscaria numa loja (ex.: `smart tv 32`, `monitor 144hz`, `ry
 - **Notificação no celular** pelo app gratuito [ntfy](https://ntfy.sh) (iPhone e Android), sem cadastro.
 - **WhatsApp** (opcional), via [CallMeBot](https://www.callmebot.com/blog/free-api-whatsapp-messages/).
 
+<p align="center">
+  <img src="docs/img/notificacao-celular.png" alt="Notificação do Monitor de preços chegando no iPhone pelo ntfy" width="420">
+</p>
+
 ## Instalação (Windows 10/11)
 
 Precisa do Python 3.11 ou mais novo. A janela usa o Edge WebView2, que já vem no Windows 10/11.
 
 ```powershell
-git clone <endereço deste repositório> monitor-precos
-cd monitor-precos
+git clone https://github.com/VictorAlves308/preco-real.git
+cd preco-real
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 powershell -ExecutionPolicy Bypass -File criar_atalho.ps1    # cria o atalho "Monitor de precos" na área de trabalho
@@ -47,6 +58,12 @@ Abra pelo atalho ou com `.venv\Scripts\python.exe -m precos --cadastro`. O app t
    - **Verificação automática:** 5 min, 10 min, 30 min, 1 hora, personalizado (1 a 1440 min) ou desligada. Usa o Agendador de Tarefas do Windows e roda em prioridade baixa, mesmo com o app fechado.
    - **Pesquisa com IA** (opcional, veja abaixo).
 
+<p align="center">
+  <img src="docs/img/boas-vindas.png" alt="Tela de boas-vindas" width="280">
+  <img src="docs/img/cadastro.png" alt="Cadastro de produto com exemplos" width="280">
+  <img src="docs/img/celular.png" alt="Passo a passo do aviso no celular" width="280">
+</p>
+
 O botão **Verificar agora** faz uma busca na hora. Leva de 1 a 2 minutos, porque o monitor espera alguns segundos entre uma página e outra.
 
 ## Pesquisa com IA (opcional)
@@ -62,6 +79,10 @@ A IA descarta produtos ruins e, no nível completo, lê avaliações na web e d�
 Formas de conectar, em Configurações → Pesquisa com IA:
 - **Claude Code** ou **Codex:** usam **o plano que você já paga** (Claude ou ChatGPT), pelo programa instalado no PC. O botão **Conectar** abre o login do próprio programa no navegador. O monitor nunca vê a sua senha.
 - **Chave de API** (Anthropic ou OpenAI): pago por uso, com teto de gasto mensal.
+
+<p align="center">
+  <img src="docs/img/ia.png" alt="Conexões com a IA: Claude Code e Codex ligados em ordem de prioridade" width="430">
+</p>
 
 Você pode ligar mais de uma, em ordem de prioridade. Se o limite do plano acabar na primeira, o monitor passa para a próxima e te avisa. Em cada conexão dá para escolher o modelo, com a consequência explicada: modelos menores são mais rápidos e gastam menos, mas erram mais.
 
