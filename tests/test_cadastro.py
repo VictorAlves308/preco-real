@@ -197,6 +197,7 @@ def test_testar_ia_nao_instalado(tmp_path):
 
 def test_ligar_varias_ias_em_ordem(tmp_path):
     api = _api_ia(tmp_path, lambda n: None)  # config começa com provedor = "codex"
+    api._gravar_status("claude_code", "ok", "Conectado.")
     api.ligar_ia("claude_code", True)
     cfg = carregar(tmp_path / "config.toml", tmp_path / "s.toml")
     assert cfg.ia.ligadas() == ["codex", "claude_code"]  # ligar um não desliga o outro
@@ -230,6 +231,7 @@ def test_faixa_mostra_reserva_em_uso(tmp_path):
     import json as _json
     from precos.estado import Estado
     api = _api_ia(tmp_path, lambda n: None)
+    api._gravar_status("claude_code", "ok", "Conectado.")
     api.ligar_ia("claude_code", True)  # codex (1º) e claude_code (2º)
     Estado(tmp_path / "e.db").cache_gravar("ia_status:codex", _json.dumps(
         {"tipo": "limite", "mensagem": "Codex: o limite de uso do seu plano acabou.", "provedor": "codex"}))
@@ -333,3 +335,15 @@ def test_para_toml_tabela_dentro_de_tabela():
     dados = {"ia": {"provedor": "codex", "modelos": {"claude_code": {"completa": "opus"}, "codex": {"economica": "x"}}},
              "itens": [{"nome": "A", "buscas": ["a"]}]}
     assert tomllib.loads(para_toml(dados)) == dados
+
+
+def test_nao_liga_ia_sem_conectar(tmp_path):
+    api = _api_ia(tmp_path, lambda n: None)
+    r = api.ligar_ia("claude_code", True)
+    assert r["ligados"] == ["codex"] and "Conecte" in r["erro"]
+    api._gravar_status("claude_code", "login", "sem login")
+    assert api.ligar_ia("claude_code", True)["ligados"] == ["codex"]
+
+
+def test_chave_desabilitada_sem_conexao_no_js():
+    assert "Conecte primeiro" in html_cadastro()

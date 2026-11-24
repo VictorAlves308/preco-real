@@ -297,6 +297,10 @@ class Api:
             atual = [x for x in self._ligadas(raw) if x in ("claude", "openai")]
             provedor_api = atual[0] if atual else raw.get("ia", {}).get("provedor")
         pid = self._pid(id_, provedor_api)
+        if ligado and pid not in self._ligadas(raw) and (self._status_salvo(pid) or {}).get("tipo") != "ok":
+            r = self.status_ia()
+            r["erro"] = "Conecte primeiro: clique em Conectar e espere aparecer \"Conectado\"."
+            return r
         lig = [x for x in self._ligadas(raw) if x != pid and not (id_ == "api" and x in ("claude", "openai"))]
         if ligado:
             lig.append(pid)
@@ -893,8 +897,7 @@ document.addEventListener('click', async e => {
   const lg = e.target.closest('[data-ligar]');
   if (lg && api() && !lg.disabled) { const id = lg.dataset.ligar;
     if (IA.ligados.includes(id)) { IA = await api().ligar_ia(id, false, null); renderIA(); status('Desligada.'); }
-    else if (id === 'api') { abertoApi = true; renderIA(); }
-    else conectar(id); }
+    else { const r = await api().ligar_ia(id, true, null); if (r.erro) status(r.erro); IA = r; renderIA(); } }
   const cn = e.target.closest('[data-conectar]'); if (cn && api()) conectar(cn.dataset.conectar);
   const pr = e.target.closest('[data-priorizar]');
   if (pr && api()) { IA = await api().priorizar_ia(pr.dataset.priorizar); renderIA(); status('Ordem atualizada.'); }
@@ -942,7 +945,7 @@ function blocoModelos(c){
 }
 function rowIA(c){
   const pos = IA.ligados.indexOf(c.id) + 1, ligado = pos > 0, t = testes[c.id] || (IA.status || {})[c.id];
-  const conectado = t && t.tipo === 'ok';
+  const conectado = t && t.tipo === 'ok', podeLigar = c.instalado && (ligado || conectado);
   let acoes = '', extra = '';
   if (ligado && IA.ligados.length > 1) acoes += `<span class="ordem" title="Ordem de uso">${pos}º</span>` +
     (pos > 1 ? `<button class="btn discreto" data-priorizar="${c.id}">Usar primeiro</button>` : '');
@@ -968,7 +971,7 @@ function rowIA(c){
   const versao = c.versao ? ' · ' + esc(c.versao) : '';
   return `<div class="conexao${ligado ? ' sel' : ''}">
     <button class="chave" role="switch" data-ligar="${c.id}" aria-checked="${ligado}" aria-label="Usar ${esc(c.nome)}"
-      title="${ligado ? 'Ligado' : 'Desligado'}" ${c.instalado ? '' : 'disabled'}></button>
+      title="${ligado ? 'Ligado' : (podeLigar ? 'Desligado' : 'Conecte primeiro')}" ${podeLigar ? '' : 'disabled'}></button>
     <div class="cx-info"><b>${esc(c.nome)}</b><span>${c.instalado ? esc(c.detalhe) + versao : 'Não instalado'}</span></div>
     <div class="cx-acoes">${acoes}</div>
     ${extra ? `<div class="cx-extra">${extra}</div>` : ''}</div>`;
