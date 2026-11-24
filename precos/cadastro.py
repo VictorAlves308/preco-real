@@ -683,7 +683,7 @@ footer .status{flex:1;color:var(--suave);font-size:12.5px}
 .link{background:none;border:0;color:var(--texto);font-weight:600;font-size:13px;padding:4px 2px}
 .link:hover{color:var(--acento)}
 .conexoes{display:flex;flex-direction:column;gap:8px}
-.conexao{display:grid;grid-template-columns:1fr auto auto;gap:2px 14px;align-items:center;border:1px solid var(--borda);
+.conexao{display:grid;grid-template-columns:auto 1fr auto;gap:2px 14px;align-items:center;border:1px solid var(--borda);
   border-radius:12px;padding:14px 16px;background:var(--cartao);transition:border-color .15s,box-shadow .15s}
 .conexao.sel{border-color:var(--acento);box-shadow:0 0 0 1px var(--acento)}
 .chave{width:40px;height:22px;border-radius:999px;background:var(--borda-forte);border:0;
@@ -706,7 +706,7 @@ footer .status{flex:1;color:var(--suave);font-size:12.5px}
 .cx-info span{color:var(--suave);font-size:12.5px}
 .cx-acoes{display:flex;align-items:center;gap:8px}
 .selo{font-size:11.5px;font-weight:650;padding:2px 8px;border-radius:6px;background:var(--bom-bg);color:var(--bom-tx)}
-.cx-extra{grid-column:1/4;margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.cx-extra{grid-column:2/4;margin-top:10px;display:flex;flex-direction:column;gap:8px}
 .cx-dica{color:var(--suave);font-size:12px}
 .codigo{display:flex;align-items:center;gap:8px;background:var(--fundo);border:1px solid var(--borda);border-radius:8px;padding:8px 8px 8px 12px}
 .codigo code{flex:1;font:12.5px/1.4 "Cascadia Mono",Consolas,monospace;overflow-x:auto;white-space:nowrap}
@@ -927,10 +927,10 @@ function rowIA(c){
   if (ligado && c.instalado) extra += blocoModelos(c);
   const versao = c.versao ? ' · ' + esc(c.versao) : '';
   return `<div class="conexao${ligado ? ' sel' : ''}">
-    <div class="cx-info"><b>${esc(c.nome)}</b><span>${c.instalado ? esc(c.detalhe) + versao : 'Não instalado'}</span></div>
-    <div class="cx-acoes">${acoes}</div>
     <button class="chave" role="switch" data-ligar="${c.id}" aria-checked="${ligado}" aria-label="Usar ${esc(c.nome)}"
       title="${ligado ? 'Ligado' : 'Desligado'}" ${c.instalado ? '' : 'disabled'}></button>
+    <div class="cx-info"><b>${esc(c.nome)}</b><span>${c.instalado ? esc(c.detalhe) + versao : 'Não instalado'}</span></div>
+    <div class="cx-acoes">${acoes}</div>
     ${extra ? `<div class="cx-extra">${extra}</div>` : ''}</div>`;
 }
 async function conectar(id){
