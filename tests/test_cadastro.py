@@ -400,3 +400,31 @@ def test_cep_configuravel(tmp_path):
     api.salvar_geral({"cep": ""})
     assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").cep is None
     assert 'id="g-cep"' in html_cadastro()
+
+
+@pytest.mark.parametrize("digitado,topico", [
+    ("ntfy.sh/promo-exemplo-123", "promo-exemplo-123"),
+    ("https://ntfy.sh/promo-exemplo-123", "promo-exemplo-123"),
+    ("  promo-exemplo-123  ", "promo-exemplo-123"),
+    ("promo exemplo", None),
+])
+def test_normaliza_topico(digitado, topico):
+    from precos.cadastro import normalizar_topico
+    assert normalizar_topico(digitado) == topico
+
+
+def test_enviar_teste_usa_o_campo_e_salva(tmp_path):
+    api = _api_ia(tmp_path, lambda n: None)
+    enviados = []
+    api._enviar_ntfy = lambda cfg, titulo, corpo, link: (enviados.append(cfg.ntfy_topico), True)[1]
+    r = api.testar_aviso("ntfy.sh/promo-exemplo-123")
+    assert r["ok"] and enviados == ["promo-exemplo-123"]
+    assert carregar(tmp_path / "config.toml", tmp_path / "s.toml").ntfy_topico == "promo-exemplo-123"
+    api._enviar_ntfy = lambda *a: False
+    assert api.testar_aviso("promo-exemplo-123")["ok"] is False
+    assert api.testar_aviso("canal com espaço")["ok"] is False
+
+
+def test_dicas_de_busca_no_cadastro():
+    html = html_cadastro()
+    assert 'class="dicas"' in html and "smart tv 32 polegadas" in html and "Preço máximo" in html

@@ -182,6 +182,14 @@ def form_de_item(raw: dict) -> dict:
 TAREFA = "Monitor de precos"
 
 
+def normalizar_topico(txt: str) -> str | None:
+    """Aceita 'meu-canal', 'ntfy.sh/meu-canal' ou 'https://ntfy.sh/meu-canal'. None se inválido."""
+    t = (txt or "").strip()
+    t = re.sub(r"^https?://", "", t, flags=re.I)
+    t = re.sub(r"^ntfy\.sh/", "", t, flags=re.I).strip("/")
+    return t if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", t) else None
+
+
 def _ler_tarefa() -> dict:
     """Lê a tarefa agendada do Windows (intervalo e próxima execução)."""
     if os.name != "nt":
@@ -266,6 +274,9 @@ class Api:
         self._abrir_terminal = _abrir_console
         self._ler_tarefa = _ler_tarefa
         self._rodar_script = _rodar_script
+        from .avisos import enviar_ntfy
+
+        self._enviar_ntfy = enviar_ntfy
 
     def ofertas(self) -> dict:
         """Aba Ofertas: as melhores ofertas de cada produto na última verificação."""
@@ -651,7 +662,10 @@ class Api:
             else:
                 seg.pop("cep", None)
         if "ntfy_topico" in form:
-            topico = (form.get("ntfy_topico") or "").strip()
+            bruto = (form.get("ntfy_topico") or "").strip()
+            topico = normalizar_topico(bruto)
+            if bruto and not topico:
+                return {"ok": False, "erro": "Canal inválido: use só letras, números, - e _ (sem espaços)."}
             if topico:
                 seg["ntfy_topico"] = topico
             else:
@@ -680,9 +694,21 @@ class Api:
         self._rodar()
         return "Verificando agora. Se aparecer oferta boa, a janela de aviso abre sozinha."
 
-    def testar_aviso(self) -> str:
-        self._rodar("--teste-aviso")
-        return "Aviso de teste enviado. Confira o celular."
+    def testar_aviso(self, canal: str | None = None) -> dict:
+        """Salva o canal digitado e manda uma notificação de teste na hora."""
+        if canal is not None:
+            r = self.salvar_geral({"ntfy_topico": canal})
+            if not r["ok"]:
+                return r
+        cfg = carregar(self._config_path, self._segredos_path)
+        if not cfg.ntfy_topico:
+            return {"ok": False, "erro": "Digite o nome do canal do ntfy primeiro."}
+        ok = self._enviar_ntfy(cfg, "Monitor de preços",
+                               "Teste: se esta notificação chegou no celular, os avisos estão funcionando.", None)
+        if ok:
+            return {"ok": True, "mensagem": f"Enviado para o canal \"{cfg.ntfy_topico}\". Confira o app ntfy no celular.",
+                    "canal": cfg.ntfy_topico}
+        return {"ok": False, "erro": "O ntfy não aceitou o envio. Confira a internet e tente de novo."}
 
 
 # ---------------------------------------------------------------- página
@@ -770,6 +796,12 @@ details{border-top:1px solid var(--borda);padding-top:14px}
 summary{cursor:pointer;font-weight:600;font-size:13px;color:var(--suave)}
 details[open] summary{margin-bottom:14px;color:var(--texto)}
 details .grade{display:flex;flex-direction:column;gap:14px}
+.dicas{border:0;padding:0;margin-top:-6px}
+.dicas summary{font-size:12.5px;color:var(--acento);font-weight:600}
+.dicas[open] summary{margin-bottom:8px;color:var(--acento)}
+.dicas ul{margin:0;padding:12px 14px 12px 30px;background:var(--fundo);border-radius:8px;display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--suave)}
+.dicas b{color:var(--texto);font-weight:600}
+.dicas code{font:12px "Cascadia Mono",Consolas,monospace;background:var(--cartao);border:1px solid var(--borda);border-radius:5px;padding:1px 5px;color:var(--texto)}
 .erro{background:var(--muito-bg);color:var(--muito-tx);border-radius:8px;padding:9px 12px;font-size:13px}
 .botoes{display:flex;justify-content:flex-end;gap:8px}
 .secao{display:flex;flex-direction:column;gap:14px}
@@ -986,7 +1018,9 @@ document.addEventListener('click', async e => {
     testes.api = await api().conectar_ia('api'); IA = await api().status_ia(); renderIA(); }
   if (e.target.closest('#aplicar-intervalo') && api()) await aplicarIntervalo(+$('#intervalo-min').value);
   if (e.target.closest('#verificar') && api()) { status(await api().verificar_agora()); acompanhar(); }
-  if (e.target.closest('#testar') && api()) status(await api().testar_aviso());
+  if (e.target.closest('#testar') && api()) { status('Enviando teste…');
+    const r = await api().testar_aviso($('#g-ntfy').value);
+    if (r.canal) $('#g-ntfy').value = r.canal; status(r.ok ? r.mensagem : r.erro); }
 });
 $('#form-item').addEventListener('submit', salvarForm);
 $('#form-geral').addEventListener('submit', salvarGeral);
@@ -1131,9 +1165,20 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
     form_item = (
         '<form id="form-item" class="cartao" novalidate><h2 id="f-titulo">Novo produto</h2>'
         '<p id="f-erro" class="erro oculto"></p>'
-        + _campo("nome", "Nome", "Como ele aparece nos avisos.", ph="Ex.: Monitor 144Hz")
+        + _campo("nome", "Nome", "Como ele aparece nos avisos.", ph="Ex.: Monitor gamer, TV da sala, Air fryer")
         + _campo("buscas", "O que buscar", "Escreva como você procuraria numa loja. Separe mais de uma busca com vírgula.",
-                 ph="Ex.: monitor 144hz, monitor aoc 144hz")
+                 ph="Ex.: monitor 144hz 24 polegadas, monitor gamer ips")
+        + '<details class="dicas"><summary>Como escrever para ter um bom resultado</summary><ul>'
+          "<li><b>Tipo do produto + o que importa:</b> <code>smart tv 32 polegadas</code>, "
+          "<code>monitor 144hz</code>, <code>air fryer 4 litros</code>.</li>"
+          "<li><b>Modelo exato? Use o código:</b> <code>ryzen 7 5700x</code>, <code>tcl 32s5k</code>. "
+          "Ligue a opção de exigir todas as palavras para não pegar modelos parecidos (ex.: 5700X3D).</li>"
+          "<li><b>Evite frases longas e preço na busca:</b> em vez de <code>tv barata até 1500</code>, "
+          "escreva <code>smart tv 32</code> e coloque 1500 em Preço máximo.</li>"
+          "<li><b>Duas ou três buscas parecidas ajudam:</b> <code>monitor 144hz, monitor gamer ips</code>. "
+          "O monitor também procura sozinho na categoria certa do Zoom, do mais barato ao mais caro.</li>"
+          "<li><b>Tamanho e Hz vão nos filtros avançados</b> (polegadas mín./máx., Hz mínimo): "
+          "aí ele usa os filtros do próprio Zoom e acha produtos com histórico de preço.</li></ul></details>"
         + '<p id="f-fixo" class="campo oculto"><small>Este produto está ligado a uma página específica. '
           "Deixe a busca em branco para manter assim.</small></p>"
         + '<label class="check"><input type="checkbox" id="f-palavras"> Só produtos com todas as palavras da primeira busca</label>'
@@ -1162,7 +1207,7 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
         '<div class="secao"><h3>Avisos no celular</h3>'
         '<p class="dica">Instale o app ntfy, toque em + e digite o mesmo nome de canal.</p>'
         '<div class="campo"><label for="g-ntfy">Canal do ntfy</label><div class="junto">'
-        '<input id="g-ntfy" placeholder="Ex.: precos-k7x9q2" autocomplete="off">'
+        '<input id="g-ntfy" placeholder="Ex.: precos-k7x9q2 (só o nome, sem ntfy.sh/)" autocomplete="off">'
         '<button type="button" class="btn" id="testar">Enviar teste</button></div>'
         "<small>Use um nome difícil de adivinhar: quem souber o nome lê os avisos.</small></div>"
         '<div class="campo"><label for="g-cep">Seu CEP</label>'
