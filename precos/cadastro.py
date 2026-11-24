@@ -797,6 +797,18 @@ summary{cursor:pointer;font-weight:600;font-size:13px;color:var(--suave)}
 details[open] summary{margin-bottom:14px;color:var(--texto)}
 details .grade{display:flex;flex-direction:column;gap:14px}
 .dicas{border:0;padding:0;margin-top:-6px}
+.passos{margin:0;padding:0;list-style:none;counter-reset:p;display:flex;flex-direction:column;gap:8px}
+.passo{counter-increment:p;display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--suave)}
+.passo::before{content:counter(p);flex:none;width:22px;height:22px;border-radius:50%;background:var(--bom-bg);
+  color:var(--bom-tx);font-weight:700;font-size:12px;display:grid;place-items:center;margin-top:-1px}
+.passo b{color:var(--texto);font-weight:600}
+.grupo-input{flex:1;display:flex;align-items:stretch;border:1px solid var(--borda-forte);border-radius:8px;
+  background:var(--cartao);overflow:hidden}
+.grupo-input:focus-within{border-color:var(--acento);box-shadow:0 0 0 3px var(--bom-bg)}
+.prefixo{display:flex;align-items:center;padding:0 2px 0 12px;color:var(--suave);background:var(--fundo);
+  border-right:1px solid var(--borda);font:13px "Cascadia Mono",Consolas,monospace}
+.grupo-input input{border:0;border-radius:0;box-shadow:none!important;font-family:"Cascadia Mono",Consolas,monospace}
+#canal-aviso.invalido{color:var(--muito-tx);font-weight:600}
 .dicas summary{font-size:12.5px;color:var(--acento);font-weight:600}
 .dicas[open] summary{margin-bottom:8px;color:var(--acento)}
 .dicas ul{margin:0;padding:12px 14px 12px 30px;background:var(--fundo);border-radius:8px;display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--suave)}
@@ -1018,6 +1030,12 @@ document.addEventListener('click', async e => {
     testes.api = await api().conectar_ia('api'); IA = await api().status_ia(); renderIA(); }
   if (e.target.closest('#aplicar-intervalo') && api()) await aplicarIntervalo(+$('#intervalo-min').value);
   if (e.target.closest('#verificar') && api()) { status(await api().verificar_agora()); acompanhar(); }
+  if (e.target.closest('#gerar-canal')) { const a = 'abcdefghijkmnpqrstuvwxyz23456789';
+    $('#g-ntfy').value = 'precos-' + Array.from(crypto.getRandomValues(new Uint8Array(8)), n => a[n % a.length]).join('');
+    checarCanal(); status('Nome gerado. Copie e use o mesmo nome no app ntfy.'); }
+  if (e.target.closest('#copiar-canal')) { if ($('#g-ntfy').value) { navigator.clipboard.writeText($('#g-ntfy').value);
+    const b = e.target.closest('#copiar-canal'); b.textContent = 'Copiado'; setTimeout(() => b.textContent = 'Copiar', 2000); } }
+  if (e.target.closest('#testar') && api() && !checarCanal()) { status('Corrija o nome do canal antes de testar.'); return; }
   if (e.target.closest('#testar') && api()) { status('Enviando teste…');
     const r = await api().testar_aviso($('#g-ntfy').value);
     if (r.canal) $('#g-ntfy').value = r.canal; status(r.ok ? r.mensagem : r.erro); }
@@ -1026,6 +1044,17 @@ $('#form-item').addEventListener('submit', salvarForm);
 $('#form-geral').addEventListener('submit', salvarGeral);
 marcarTema();
 
+const RE_CANAL = /^[A-Za-z0-9_-]{1,64}$/;
+function checarCanal(){
+  const i = $('#g-ntfy'); let v = i.value.trim().replace(/^https?:\/\//i, '').replace(/^ntfy\.sh\//i, '').replace(/\/+$/, '');
+  if (v !== i.value) i.value = v;
+  const ok = !v || RE_CANAL.test(v), av = $('#canal-aviso');
+  av.classList.toggle('invalido', !ok);
+  av.textContent = ok ? 'Digite só o nome, sem "ntfy.sh/". Use algo difícil de adivinhar: quem souber o nome consegue ler os avisos.'
+                      : 'Nome inválido: use só letras, números, - e _ (sem espaços nem acentos).';
+  return ok;
+}
+document.addEventListener('input', e => { if (e.target.id === 'g-ntfy') checarCanal(); });
 let AG = null;
 async function aplicarIntervalo(min){
   if (min !== 0 && !(min >= 1 && min <= 1440)) { status('Use de 1 a 1440 minutos.'); return; }
@@ -1205,11 +1234,25 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
     form_geral = (
         '<form id="form-geral" class="cartao" novalidate>'
         '<div class="secao"><h3>Avisos no celular</h3>'
-        '<p class="dica">Instale o app ntfy, toque em + e digite o mesmo nome de canal.</p>'
-        '<div class="campo"><label for="g-ntfy">Canal do ntfy</label><div class="junto">'
-        '<input id="g-ntfy" placeholder="Ex.: precos-k7x9q2 (só o nome, sem ntfy.sh/)" autocomplete="off">'
-        '<button type="button" class="btn" id="testar">Enviar teste</button></div>'
-        "<small>Use um nome difícil de adivinhar: quem souber o nome lê os avisos.</small></div>"
+        '<p class="dica">Os avisos chegam pelo app gratuito ntfy (iPhone e Android), sem cadastro. '
+        "Funciona assim: você inventa um nome de canal, coloca o mesmo nome aqui e no app, e pronto.</p>"
+        '<ol class="passos">'
+        '<li class="passo"><span><b>Instale o app ntfy</b> no celular (App Store ou Google Play).</span></li>'
+        '<li class="passo"><span><b>Escolha um nome de canal</b> abaixo, ou clique em <b>Gerar nome</b>. '
+        "Só letras, números, - e _ (sem espaços).</span></li>"
+        '<li class="passo"><span><b>No app, toque em +</b> e digite <b>exatamente o mesmo nome</b>. '
+        "Deixe o servidor padrão (ntfy.sh) e toque em Subscribe.</span></li>"
+        '<li class="passo"><span><b>Volte aqui e clique em Enviar teste.</b> A notificação deve chegar em segundos.</span></li>'
+        "</ol>"
+        '<div class="campo"><label for="g-ntfy">Nome do canal</label>'
+        '<div class="junto"><div class="grupo-input"><span class="prefixo">ntfy.sh/</span>'
+        '<input id="g-ntfy" placeholder="precos-k7x9q2" autocomplete="off" spellcheck="false"></div>'
+        '<button type="button" class="btn" id="gerar-canal">Gerar nome</button>'
+        '<button type="button" class="btn" id="copiar-canal">Copiar</button></div>'
+        '<small id="canal-aviso">Digite só o nome, sem "ntfy.sh/". Use algo difícil de adivinhar: '
+        "quem souber o nome consegue ler os avisos.</small>"
+        '<div class="botoes" style="justify-content:flex-start">'
+        '<button type="button" class="btn primario" id="testar">Enviar teste</button></div></div>'
         '<div class="campo"><label for="g-cep">Seu CEP</label>'
         '<input id="g-cep" inputmode="numeric" autocomplete="postal-code" placeholder="Ex.: 01310-100" maxlength="9">'
         '<small>Guardado só no seu PC. Ainda não é usado: o cálculo de frete por CEP está em desenvolvimento. '

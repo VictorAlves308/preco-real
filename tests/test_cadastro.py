@@ -428,3 +428,11 @@ def test_enviar_teste_usa_o_campo_e_salva(tmp_path):
 def test_dicas_de_busca_no_cadastro():
     html = html_cadastro()
     assert 'class="dicas"' in html and "smart tv 32 polegadas" in html and "Preço máximo" in html
+
+
+def test_ntfy_explicado_passo_a_passo():
+    html = html_cadastro()
+    assert 'class="prefixo">ntfy.sh/</span>' in html
+    assert 'id="gerar-canal"' in html and 'id="copiar-canal"' in html
+    assert html.count('class="passo"') == 4
+    assert 'id="canal-aviso"' in html
