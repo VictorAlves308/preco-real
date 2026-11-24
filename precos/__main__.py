@@ -7,9 +7,11 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from .avisos import Achado
+from .avisos import Achado, enviar_ntfy
 from .config import Config, carregar
 from .estado import Estado
+from .ia import criar
+from .pesquisa import Pesquisador
 from .rodada import avisar_todos, rodar
 from .zoom import Oferta
 
@@ -37,6 +39,14 @@ def _logs() -> None:
     logging.basicConfig(level=logging.INFO, handlers=[h], force=True)
 
 
+def _montar_pesquisador(cfg: Config, estado: Estado):
+    provs = {n: criar(cfg.ia, n, cfg.chaves) for n in ("economica", "completa")}
+    if not any(provs.values()):
+        return None
+    return Pesquisador(cfg, estado, provs,
+                       notificar=lambda t: enviar_ntfy(cfg, "Monitor de preços", t, None))
+
+
 def main(argv: list[str]) -> int:
     _prioridade_baixa()
     _logs()
@@ -60,7 +70,8 @@ def _executar(argv: list[str]) -> int:
     if not cfg.itens:
         print("Nenhum item em config.toml (copie config.exemplo.toml)")
         return 1
-    achados = rodar(cfg, Estado(DADOS / "estado.db"))
+    estado = Estado(DADOS / "estado.db")
+    achados = rodar(cfg, estado, pesquisador=_montar_pesquisador(cfg, estado))
     logging.info("rodada terminou: %d achados", len(achados))
     print(f"OK: {len(achados)} achados")
     return 0

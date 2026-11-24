@@ -32,24 +32,33 @@ def _candidatos_produto(html: str, url: str, item: Item, hoje: date, tags: list[
             for o in ordenar([o for o in p.ofertas if elegivel(o, item)])]
 
 
-def _candidatos(item: Item, baixar, hoje: date, dormir):
-    html = baixar(item.url)
+def _candidatos(item: Item, baixar, hoje: date, dormir, pesquisador=None):
     if item.tipo == "produto":
-        return _candidatos_produto(html, item.url, item, hoje, [])
-    hits, urls_vistas = [], set()
-    paginas = [html]
-    for u in item.urls:
-        dormir(random.uniform(3, 6))
+        return _candidatos_produto(baixar(item.url), item.url, item, hoje, [])
+    usar_ia = pesquisador is not None and item.pesquisa != "nenhuma"
+    urls = [u for u in [item.url, *item.urls] if u]
+    if usar_ia:
+        urls += [u for u in pesquisador.buscas_para(item) if u not in urls]
+    paginas = []
+    for i, u in enumerate(urls):
+        if i:
+            dormir(random.uniform(3, 6))
         try:
             paginas.append(baixar(u))
         except Exception as e:  # noqa: BLE001
             log.warning("%s: busca %s falhou: %s", item.nome, u, e)
+    if urls and not paginas:
+        raise zoom.SemDados("nenhuma busca respondeu")
+    hits, urls_vistas = [], set()
     for pagina in paginas:
         for h in zoom.parse_busca(zoom.extrair_estado(pagina)):
             ok, tags = passa_filtro_nome(h.nome, item)
             if ok and h.url not in urls_vistas:
                 urls_vistas.add(h.url)
                 hits.append((h, tags))
+    if usar_ia and hits:
+        julg = pesquisador.filtrar(item, [h.nome for h, _ in hits])
+        hits = [(h, t) for h, t in hits if julg.get(h.nome, (True, ""))[0]]
     hits.sort(key=lambda ht: ht[0].total_parcelado or float("inf"))
     out = []
     for h, tags in hits[:MAX_PAGINAS_BUSCA]:
@@ -72,9 +81,9 @@ def _chave(item: Item, o: Oferta):
     return (o.total_parcelado,)  # menor_preco (padrão)
 
 
-def _escolher(item: Item, cands, estado: Estado) -> list[Achado]:
+def _escolher(item: Item, cands, estado: Estado, pesquisador=None) -> list[Achado]:
     menor = estado.menor_visto(item.nome)
-    escolhidos, vistos = [], set()
+    escolhidos, vistos, vetados = [], set(), set()
     for o, v, tags in sorted(cands, key=lambda c: _chave(item, c[0])):
         if o.offer_id in vistos or v == "maquiada":
             continue
@@ -87,12 +96,22 @@ def _escolher(item: Item, cands, estado: Estado) -> list[Achado]:
             continue
         if estado.ja_avisado(item.nome, o.offer_id, o.total_parcelado):
             continue
+        tags = list(tags)
+        if pesquisador is not None:
+            av = pesquisador.avaliar(item, o.nome)
+            if av and av[2]:
+                log.info("%s: IA vetou %s (%s)", item.nome, o.nome, av[1])
+                vetados.add(o.offer_id)
+                continue
+            if av and av[0] is not None:
+                tags.append(f"nota {av[0]}/10 · {av[1]}")
         vistos.add(o.offer_id)
-        escolhidos.append(Achado(item.nome, o, v, list(tags)))
+        escolhidos.append(Achado(item.nome, o, v, tags))
         if len(escolhidos) == MAX_POR_ITEM:
             break
-    if cands:
-        estado.registrar_preco(item.nome, min(c[0].total_parcelado for c in cands))
+    validos = [c[0].total_parcelado for c in cands if c[0].offer_id not in vetados]
+    if validos:
+        estado.registrar_preco(item.nome, min(validos))
     return escolhidos
 
 
@@ -113,7 +132,7 @@ def avisar_todos(cfg: Config):
 
 
 def rodar(cfg: Config, estado: Estado, baixar=zoom.baixar, avisar=None,
-          hoje: date | None = None, dormir=time.sleep) -> list[Achado]:
+          hoje: date | None = None, dormir=time.sleep, pesquisador=None) -> list[Achado]:
     hoje = hoje or date.today()
     avisar = avisar or avisar_todos(cfg)
     achados: list[Achado] = []
@@ -121,8 +140,8 @@ def rodar(cfg: Config, estado: Estado, baixar=zoom.baixar, avisar=None,
         if i:
             dormir(random.uniform(3, 6))
         try:
-            cands = _candidatos(item, baixar, hoje, dormir)
-            novos = _escolher(item, cands, estado)
+            cands = _candidatos(item, baixar, hoje, dormir, pesquisador)
+            novos = _escolher(item, cands, estado, pesquisador)
             log.info("%s: %d elegíveis, %d para avisar", item.nome, len(cands), len(novos))
             if not cands:
                 log.info("%s: nenhuma oferta elegível", item.nome)

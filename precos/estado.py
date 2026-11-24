@@ -17,6 +17,8 @@ class Estado:
             CREATE TABLE IF NOT EXISTS avisos (item TEXT, offer_id TEXT, total REAL,
                                                PRIMARY KEY (item, offer_id));
             CREATE TABLE IF NOT EXISTS menores (item TEXT PRIMARY KEY, total REAL);
+            CREATE TABLE IF NOT EXISTS ia_cache (chave TEXT PRIMARY KEY, valor TEXT);
+            CREATE TABLE IF NOT EXISTS gastos (mes TEXT PRIMARY KEY, usd REAL);
             """
         )
 
@@ -41,3 +43,22 @@ class Estado:
         if atual is None or total < atual:
             with self.db:
                 self.db.execute("INSERT OR REPLACE INTO menores VALUES (?,?)", (item, total))
+
+    def cache_ler(self, chave: str) -> str | None:
+        row = self.db.execute("SELECT valor FROM ia_cache WHERE chave=?", (chave,)).fetchone()
+        return row[0] if row else None
+
+    def cache_gravar(self, chave: str, valor: str) -> None:
+        with self.db:
+            self.db.execute("INSERT OR REPLACE INTO ia_cache VALUES (?,?)", (chave, valor))
+
+    def gasto(self, mes: str) -> float:
+        row = self.db.execute("SELECT usd FROM gastos WHERE mes=?", (mes,)).fetchone()
+        return row[0] if row else 0.0
+
+    def somar_gasto(self, mes: str, usd: float) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO gastos VALUES (?,?) ON CONFLICT(mes) DO UPDATE SET usd = usd + excluded.usd",
+                (mes, usd),
+            )

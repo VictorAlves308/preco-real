@@ -1,2 +1,4 @@
 requests
+anthropic
+openai
 pytest

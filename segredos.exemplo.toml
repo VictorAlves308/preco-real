@@ -11,3 +11,8 @@ ntfy_topico = "precos-troque-este-nome"
 # WhatsApp via CallMeBot (opcional): https://www.callmebot.com/blog/free-api-whatsapp-messages/
 # callmebot_fone = "+5511999999999"
 # callmebot_apikey = "123456"
+
+# IA (opcional, só se usar "pesquisa" nos itens). Também pode usar as variáveis de ambiente
+# ANTHROPIC_API_KEY / OPENAI_API_KEY.
+# anthropic_api_key = "sk-ant-..."
+# openai_api_key = "sk-..."

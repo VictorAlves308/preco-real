@@ -145,3 +145,60 @@ def test_ordem_parcelas_10x_primeiro(tmp_path):
     achados = _rodar([_item_ordem("parcelas", url)], {url: html_de(est)}, tmp_path, Avisar())
     assert achados[0].oferta.parcelas == 10
     assert "Evnia 27" in achados[0].oferta.nome
+
+
+class FakePesq:
+    def __init__(self, reprovar="", vetar="", buscas=()):
+        self.reprovar, self.vetar, self.buscas = reprovar, vetar, list(buscas)
+
+    def buscas_para(self, item):
+        return self.buscas
+
+    def filtrar(self, item, nomes):
+        return {n: (not (self.reprovar and self.reprovar in n), "motivo") for n in nomes}
+
+    def avaliar(self, item, nome):
+        if item.pesquisa != "completa":
+            return None
+        return (2, "defeito crônico", True) if self.vetar and self.vetar in nome else (8, "bem avaliado", False)
+
+
+def _monitor(pesquisa, url="https://www.zoom.com.br/search?q=m"):
+    return Item(nome="Monitor", url=url, tipo="busca", modo="mais_barato", polegadas_min=23.8,
+                polegadas_max=27, hz_min=144, marcas=["LG", "Philips", "Gigabyte", "ASUS"], pesquisa=pesquisa)
+
+
+def _rodar_ia(itens, paginas, tmp_path, pesq):
+    return rodar(Config(itens=itens), Estado(tmp_path / "e.db"), baixar=lambda u: paginas[u],
+                 avisar=Avisar(), hoje=HOJE, dormir=lambda s: None, pesquisador=pesq)
+
+
+def test_ia_descarta_reprovados(tmp_path):
+    url = "https://www.zoom.com.br/search?q=m"
+    achados = _rodar_ia([_monitor("economica")], {url: html_de(estado("zoom_busca_monitor.json"))},
+                        tmp_path, FakePesq(reprovar="LG"))
+    assert achados and all("LG" not in a.oferta.nome for a in achados)
+
+
+def test_ia_nenhuma_nao_filtra(tmp_path):
+    url = "https://www.zoom.com.br/search?q=m"
+    achados = _rodar_ia([_monitor("nenhuma")], {url: html_de(estado("zoom_busca_monitor.json"))},
+                        tmp_path, FakePesq(reprovar="LG"))
+    assert any("LG" in a.oferta.nome for a in achados)
+
+
+def test_ia_completa_pula_vetado_e_mostra_nota(tmp_path):
+    url = "https://www.zoom.com.br/search?q=m"
+    achados = _rodar_ia([_monitor("completa")], {url: html_de(estado("zoom_busca_monitor.json"))},
+                        tmp_path, FakePesq(vetar="LG"))
+    assert len(achados) == 3
+    assert all("LG" not in a.oferta.nome for a in achados)
+    assert all(any("nota 8/10" in t for t in a.tags) for a in achados)
+
+
+def test_ia_item_so_com_descricao_usa_buscas_da_ia(tmp_path):
+    url = "https://www.zoom.com.br/search?q=gerada"
+    item = _monitor("economica", url="")
+    achados = _rodar_ia([item], {url: html_de(estado("zoom_busca_monitor.json"))},
+                        tmp_path, FakePesq(buscas=[url]))
+    assert len(achados) == 3

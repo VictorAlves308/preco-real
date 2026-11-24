@@ -22,6 +22,18 @@ class Item:
     excluir: list[str] = field(default_factory=list)
     urls: list[str] = field(default_factory=list)  # buscas extras (tipo busca)
     ordem: Literal["menor_preco", "parcelas"] = "menor_preco"  # parcelas = 10x+ primeiro
+    pesquisa: Literal["nenhuma", "economica", "completa"] = "nenhuma"  # uso de IA
+    descricao: str = ""  # o que você quer, em texto livre (usado pela IA)
+
+
+@dataclass
+class ConfigIA:
+    provedor: Literal["nenhum", "claude", "openai"] = "nenhum"
+    limite_gasto_mensal: float = 5.0  # em dólares
+    modelo_economico: str | None = None
+    modelo_completo: str | None = None
+    preco_entrada: float | None = None  # US$ por 1 milhão de tokens (modelos fora da tabela)
+    preco_saida: float | None = None
 
 
 @dataclass
@@ -32,6 +44,8 @@ class Config:
     cep: str | None = None
     callmebot_fone: str | None = None
     callmebot_apikey: str | None = None
+    ia: ConfigIA = field(default_factory=ConfigIA)
+    chaves: dict = field(default_factory=dict)  # anthropic_api_key, openai_api_key
 
 
 def _ler(path: Path) -> dict:
@@ -56,4 +70,6 @@ def carregar(config_path: Path, segredos_path: Path) -> Config:
         cep=seg.get("cep"),
         callmebot_fone=seg.get("callmebot_fone"),
         callmebot_apikey=seg.get("callmebot_apikey"),
+        ia=ConfigIA(**dados.get("ia", {})),
+        chaves={k: seg[k] for k in ("anthropic_api_key", "openai_api_key") if seg.get(k)},
     )

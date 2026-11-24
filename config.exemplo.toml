@@ -1,5 +1,14 @@
 # Copie este arquivo para config.toml e ajuste.
 #
+# IA (opcional): escolha o provedor e quanto pode gastar por mês.
+# [ia]
+# provedor = "claude"            # "claude", "openai" ou "nenhum"
+# limite_gasto_mensal = 5        # em dólares; ao atingir, volta às regras fixas até o mês virar
+# modelo_economico = "..."       # opcional (padrão: claude-haiku-5-5 / gpt-5-mini)
+# modelo_completo = "..."        # opcional (padrão: claude-opus-5-5 / gpt-5)
+# preco_entrada = 1.0            # opcional: US$ por 1 milhão de tokens, para modelos fora da tabela
+# preco_saida = 4.0
+
 # Cada [[itens]] é uma coisa que você quer comprar.
 #   nome          nome que aparece no aviso
 #   url           página do Zoom (www.zoom.com.br): de um produto ou de uma busca
@@ -15,6 +24,12 @@
 #   excluir       palavras que eliminam o anúncio
 #   ordem         "menor_preco" (padrão) = o mais barato primeiro
 #                 "parcelas"    = ofertas em 10x ou mais primeiro, depois o mais barato
+#   pesquisa      uso de IA (precisa da seção [ia] e de uma chave em segredos.toml):
+#                 "nenhuma"   = só as regras acima (padrão, custo zero)
+#                 "economica" = a IA monta buscas a partir da descricao e descarta produtos ruins (centavos/mês)
+#                 "completa"  = além disso, pesquisa avaliações na web de cada finalista e dá nota/veto
+#   descricao     o que você quer, em texto livre (ex.: "air fryer boa até 500, fácil de limpar").
+#                 Com pesquisa ligada, um item pode ter só nome + descricao, sem url.
 
 [[itens]]
 nome = "Ryzen 7 5700X"

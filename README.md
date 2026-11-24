@@ -41,9 +41,29 @@ Cada bloco `[[itens]]` é um produto. Os campos estão explicados no próprio ar
 - **`ordem = "menor_preco"`** (padrão): no aviso, o mais barato vem primeiro.
 - **`ordem = "parcelas"`:** ofertas em 10x ou mais vêm primeiro e, entre elas, a mais barata.
 
+### Pesquisa com IA (opcional)
+Dá para usar **Claude** (Anthropic) ou **OpenAI**. Você escolhe quanto quer gastar.
+
+| `pesquisa` | O que faz | Custo típico |
+|---|---|---|
+| `"nenhuma"` (padrão) | Só as regras do item. | zero |
+| `"economica"` | A partir da `descricao`, a IA monta as buscas uma vez só e descarta produtos ruins. Ela só avalia os produtos **novos**. | centavos por mês |
+| `"completa"` | Tudo do econômico, mais uma pesquisa na web sobre cada finalista novo. O aviso traz uma nota de 0 a 10, e produto com defeito crônico é vetado. | alguns dólares por mês |
+
+Como ligar:
+1. Em `config.toml`, adicione a seção `[ia]` com `provedor` e `limite_gasto_mensal`.
+2. Coloque a chave em `segredos.toml`.
+3. Em cada item, defina `pesquisa` e `descricao`.
+
+Detalhes:
+- Tudo fica em cache. Um produto já avaliado não é cobrado de novo.
+- Ao atingir o limite do mês, a ferramenta volta às regras fixas e te avisa uma vez.
+- Se a IA falhar, a verificação continua só com as regras.
+
 ### `segredos.toml`: seus dados (não vai para o git)
 - **`ntfy_topico`:** o nome do seu canal de avisos. Escolha algo difícil de adivinhar, como `precos-k7x9q2m4ab`, porque quem souber o nome consegue ler os avisos.
 - **`callmebot_fone`** e **`callmebot_apikey`:** opcionais, para receber pelo WhatsApp.
+- **`anthropic_api_key`** ou **`openai_api_key`:** opcionais, para a pesquisa com IA.
 
 ### Avisos no celular (ntfy)
 1. Instale o app **ntfy** (App Store ou Google Play).

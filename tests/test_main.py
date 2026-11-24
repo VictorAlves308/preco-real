@@ -21,3 +21,13 @@ def test_teste_aviso_mostra_falha(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "ntfy: FALHOU" in out
     assert "janela: ok" in out
+
+
+def test_montar_pesquisador(tmp_path):
+    from precos.config import ConfigIA
+    from precos.estado import Estado
+    e = Estado(tmp_path / "e.db")
+    assert m._montar_pesquisador(m.Config(itens=[]), e) is None
+    cfg = m.Config(itens=[], ia=ConfigIA(provedor="claude"), chaves={"anthropic_api_key": "k"})
+    p = m._montar_pesquisador(cfg, e)
+    assert p is not None and p.provedores["economica"].modelo == "claude-haiku-5-5"
