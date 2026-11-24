@@ -1,0 +1,8 @@
+﻿.venv/
+config.toml
+segredos.toml
+dados/
+__pycache__/
+*.log
+.superpowers/
+.pytest_cache/
