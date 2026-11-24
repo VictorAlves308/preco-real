@@ -22,7 +22,8 @@
 #                 e do mais barato ao mais caro, para achar produtos com histórico de preço.
 #   modo          "promocao"    = só avisa promoção de verdade (ou oferta sem histórico)
 #                 "mais_barato" = também avisa quando aparece o menor preço já visto
-#   limite_total  preço máximo, considerando o TOTAL PARCELADO no cartão (opcional)
+#   limite_total  preço máximo, considerando o TOTAL PARCELADO no cartão sem juros (opcional)
+#   limite_vista  preço máximo à vista, no PIX ou boleto (opcional; pode usar junto com o de cima)
 #   polegadas_min / polegadas_max   tamanho da tela (opcional)
 #   hz_min        taxa de atualização mínima, para monitores (opcional)
 #   marcas        só aceita estas marcas (vazio = qualquer uma)

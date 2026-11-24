@@ -33,3 +33,9 @@ def test_tema_config(tmp_path):
     c.write_text('[aparencia]\ntema = "escuro"\n', encoding="utf-8")
     assert carregar(c, tmp_path / "x").tema == "escuro"
     assert carregar(RAIZ / "config.exemplo.toml", tmp_path / "x").tema == "sistema"
+
+
+def test_limite_vista_carrega(tmp_path):
+    c = tmp_path / "c.toml"
+    c.write_text('[[itens]]\nnome = "TV"\nbuscas = ["tv"]\nlimite_vista = 1200\n', encoding="utf-8")
+    assert carregar(c, tmp_path / "x.toml").itens[0].limite_vista == 1200.0

@@ -19,7 +19,8 @@ class Item:
     url: str = ""
     tipo: Literal["produto", "busca"] = "produto"
     modo: Literal["promocao", "mais_barato"] = "promocao"
-    limite_total: float | None = None
+    limite_total: float | None = None  # máximo no total parcelado do cartão
+    limite_vista: float | None = None  # máximo à vista (PIX)
     polegadas_min: float | None = None
     polegadas_max: float | None = None
     hz_min: int | None = None
@@ -77,8 +78,9 @@ def carregar(config_path: Path, segredos_path: Path) -> Config:
     seg = _ler(Path(segredos_path))
     itens = []
     for d in dados.get("itens", []):
-        if d.get("limite_total") is not None:
-            d["limite_total"] = float(d["limite_total"])
+        for k in ("limite_total", "limite_vista"):
+            if d.get(k) is not None:
+                d[k] = float(d[k])
         it = Item(**d)
         if it.buscas and not it.url:
             it.tipo = "busca"

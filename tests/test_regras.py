@@ -94,3 +94,18 @@ def test_ordenar():
     b = oferta(parcelas=10, total=700, oid="b")
     c = oferta(parcelas=10, total=650, oid="c")
     assert [o.offer_id for o in ordenar([a, b, c])] == ["c", "b", "a"]
+
+
+def test_limite_vista():
+    from dataclasses import replace
+    item = replace(TV, limite_total=None, limite_vista=1200.0)
+    assert elegivel(oferta(vista=1250.0, total=1300.0), item) is False
+    assert elegivel(oferta(vista=1199.0, total=1300.0), item) is True
+
+
+def test_limite_vista_e_cartao_juntos():
+    from dataclasses import replace
+    item = replace(TV, limite_total=1500.0, limite_vista=1300.0)
+    assert elegivel(oferta(vista=1290.0, total=1550.0), item) is False  # estoura o cartão
+    assert elegivel(oferta(vista=1350.0, total=1450.0), item) is False  # estoura o à vista
+    assert elegivel(oferta(vista=1290.0, total=1450.0), item) is True

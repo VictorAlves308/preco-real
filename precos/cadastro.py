@@ -99,7 +99,7 @@ def _numero(txt, campo: str, inteiro: bool = False):
     s = str(txt or "").replace("R$", "").replace(" ", "").strip()
     if not s:
         return None
-    if "," in s:
+    if "," in s or re.fullmatch(r"\d{1,3}(\.\d{3})+", s):  # 1.500,00 ou 1.500 = mil e quinhentos
         s = s.replace(".", "").replace(",", ".")
     try:
         n = float(s)
@@ -127,6 +127,9 @@ def item_do_form(form: dict, antigo: dict | None = None) -> dict:
                 it[k] = antigo[k]
     else:
         raise ValueError("Diga o que buscar (ex.: ryzen 7 5700x).")
+    vista = _numero(form.get("limite_vista"), "preço máximo à vista")
+    if vista is not None:
+        it["limite_vista"] = vista
     limite = _numero(form.get("limite_total"), "preço máximo")
     if limite is not None:
         it["limite_total"] = limite
@@ -168,7 +171,8 @@ def form_de_item(raw: dict) -> dict:
 
     return {
         "nome": raw.get("nome", ""), "buscas": ", ".join(termos), "produto_fixo": produto_fixo,
-        "limite_total": txt(raw.get("limite_total")), "modo": raw.get("modo", "promocao"),
+        "limite_total": txt(raw.get("limite_total")), "limite_vista": txt(raw.get("limite_vista")),
+        "modo": raw.get("modo", "promocao"),
         "ordem": raw.get("ordem", "menor_preco"), "pesquisa": raw.get("pesquisa", "nenhuma"),
         "descricao": raw.get("descricao", ""), "marcas": ", ".join(raw.get("marcas", [])),
         "exigir": ", ".join(raw.get("exigir", [])), "excluir": ", ".join(raw.get("excluir", [])),
@@ -802,6 +806,7 @@ input,textarea,select{font:inherit;color:var(--texto);background:var(--cartao);b
 input:focus,textarea:focus{border-color:var(--acento);box-shadow:0 0 0 3px var(--bom-bg)}
 textarea{resize:vertical;min-height:64px}
 .linha{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.linha.dois{grid-template-columns:1fr 1fr}
 .seg{display:flex;flex-wrap:wrap;background:var(--fundo);border:1px solid var(--borda);border-radius:10px;padding:3px;gap:3px}
 .seg button{flex:1;border:0;background:transparent;color:var(--suave);padding:7px 10px;font-size:13px;font-weight:600}
 .seg button[aria-pressed="true"]{background:var(--cartao);color:var(--texto);box-shadow:0 0 0 1px var(--borda)}
@@ -919,7 +924,8 @@ function segValor(grupo){ const b = document.querySelector(`[data-grupo="${grupo
 
 function chipsDe(it){
   const c = [];
-  if (it.limite_total) c.push(`<span class="chip">Até R$ ${esc(it.limite_total)}</span>`);
+  if (it.limite_vista) c.push(`<span class="chip">Até R$ ${esc(it.limite_vista)} à vista</span>`);
+  if (it.limite_total) c.push(`<span class="chip">Até R$ ${esc(it.limite_total)} no cartão</span>`);
   c.push(it.modo === 'mais_barato' ? '<span class="chip verde">Avisa o menor preço</span>'
                                    : '<span class="chip verde">Só promoção real</span>');
   if (it.ordem === 'parcelas') c.push('<span class="chip">10x primeiro</span>');
@@ -947,10 +953,10 @@ function render(){
 
 function abrirForm(i){
   editando = i;
-  const it = i === null ? {nome:'',buscas:'',limite_total:'',modo:'promocao',ordem:'menor_preco',pesquisa:'nenhuma',
+  const it = i === null ? {nome:'',buscas:'',limite_total:'',limite_vista:'',modo:'promocao',ordem:'menor_preco',pesquisa:'nenhuma',
     descricao:'',marcas:'',exigir:'',excluir:'',polegadas_min:'',polegadas_max:'',hz_min:'',produto_fixo:false} : D.itens[i];
   $('#f-titulo').textContent = i === null ? 'Novo produto' : 'Editar produto';
-  for (const k of ['nome','buscas','limite_total','descricao','marcas','exigir','excluir','polegadas_min','polegadas_max','hz_min'])
+  for (const k of ['nome','buscas','limite_total','limite_vista','descricao','marcas','exigir','excluir','polegadas_min','polegadas_max','hz_min'])
     $('#f-' + k).value = it[k] || '';
   $('#f-fixo').classList.toggle('oculto', !it.produto_fixo);
   $('#f-palavras').checked = i === null;
@@ -967,7 +973,7 @@ function status(t){ $('#status').textContent = t; clearTimeout(pausa); pausa = s
 async function salvarForm(ev){
   ev.preventDefault();
   const f = {exigir_palavras: $('#f-palavras').checked, modo: segValor('modo'), ordem: segValor('ordem'), pesquisa: segValor('pesquisa')};
-  for (const k of ['nome','buscas','limite_total','descricao','marcas','exigir','excluir','polegadas_min','polegadas_max','hz_min'])
+  for (const k of ['nome','buscas','limite_total','limite_vista','descricao','marcas','exigir','excluir','polegadas_min','polegadas_max','hz_min'])
     f[k] = $('#f-' + k).value;
   if (!api()) return;
   const r = await api().salvar_item(f, editando);
@@ -987,6 +993,10 @@ async function salvarGeral(ev){
 }
 
 document.addEventListener('change', async e => {
+  if (e.target.id === 'g-ntfy' && api()) {  // salva o canal sozinho, sem depender do botão Salvar
+    const r = await api().salvar_geral({ntfy_topico: e.target.value});
+    if (r.ok) { D = r.dados; status(D.geral.ntfy_topico ? 'Canal do celular salvo.' : 'Aviso no celular desligado.'); }
+    else status(r.erro); }
   const sm = e.target.closest('[data-modelo]');
   if (sm && api()) { const v = sm.value === 'outro' ? '' : sm.value;
     const c = IA.conexoes.find(x => x.id === sm.dataset.id); c.modelos[sm.dataset.modelo] = sm.value === 'outro' ? 'outro:' : v;
@@ -1002,6 +1012,7 @@ document.addEventListener('click', async e => {
   const aba = e.target.closest('[data-aba]');
   if (aba) { document.querySelectorAll('[data-aba]').forEach(b => b.setAttribute('aria-selected', b === aba));
     if (aba.dataset.aba === 'config' && !IA) carregarIA();
+    if (aba.dataset.aba === 'ofertas' && api()) carregarOfertas();
     for (const a of ['ofertas','produtos','config']) { const s = $('#aba-' + a);
       s.classList.toggle('oculto', aba.dataset.aba !== a); s.classList.remove('entrar');
       if (aba.dataset.aba === a) { void s.offsetWidth; s.classList.add('entrar'); } }
@@ -1222,7 +1233,7 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
           "<li><b>Modelo exato? Use o código:</b> <code>ryzen 7 5700x</code>, <code>tcl 32s5k</code>. "
           "Ligue a opção de exigir todas as palavras para não pegar modelos parecidos (ex.: 5700X3D).</li>"
           "<li><b>Evite frases longas e preço na busca:</b> em vez de <code>tv barata até 1500</code>, "
-          "escreva <code>smart tv 32</code> e coloque 1500 em Preço máximo.</li>"
+          "escreva <code>smart tv 32</code> e coloque 1500 em Preço máximo parcelado.</li>"
           "<li><b>Duas ou três buscas parecidas ajudam:</b> <code>monitor 144hz, monitor gamer ips</code>. "
           "O monitor também procura sozinho na categoria certa do Zoom, do mais barato ao mais caro.</li>"
           "<li><b>Tamanho e Hz vão nos filtros avançados</b> (polegadas mín./máx., Hz mínimo): "
@@ -1230,7 +1241,10 @@ def html_cadastro(tema: str = "sistema", demo: dict | None = None, ofertas_demo:
         + '<p id="f-fixo" class="campo oculto"><small>Este produto está ligado a uma página específica. '
           "Deixe a busca em branco para manter assim.</small></p>"
         + '<label class="check"><input type="checkbox" id="f-palavras"> Só produtos com todas as palavras da primeira busca</label>'
-        + _campo("limite_total", "Preço máximo no cartão (opcional)", "Total parcelado. Ex.: 1500", ph="Sem limite")
+        + '<div class="linha dois">'
+        + _campo("limite_vista", "Preço máximo à vista (opcional)", "No PIX ou boleto. Ex.: 1300", ph="Sem limite")
+        + _campo("limite_total", "Preço máximo parcelado (opcional)", "Total no cartão sem juros. Ex.: 1500", ph="Sem limite")
+        + "</div>"
         + '<div class="campo"><span class="rotulo">Quando avisar</span>'
         + _seg("modo", (("promocao", "Só promoção real"), ("mais_barato", "Sempre que achar o menor preço"))) + "</div>"
         + '<div class="campo"><span class="rotulo">Ordem das ofertas</span>'

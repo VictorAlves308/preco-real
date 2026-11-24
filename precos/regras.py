@@ -59,6 +59,8 @@ def elegivel(o: Oferta, item: Item) -> bool:
         return False
     if item.limite_total is not None and o.total_parcelado > item.limite_total:
         return False
+    if item.limite_vista is not None and o.preco_vista > item.limite_vista:
+        return False
     return True
 
 

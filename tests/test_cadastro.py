@@ -444,3 +444,22 @@ def test_primeiro_uso_guia_o_cadastro(tmp_path):
     html = api.ofertas()["html"]
     assert "Bem-vindo" in html and 'data-novo-produto' in html
     assert "ntfy" in html  # lembra de configurar o aviso no celular
+
+
+def test_item_do_form_limite_vista():
+    it = item_do_form({"nome": "TV", "buscas": "smart tv 32", "limite_vista": "1.200",
+                       "limite_total": "1500"})
+    assert it["limite_vista"] == 1200.0 and it["limite_total"] == 1500.0
+    with pytest.raises(ValueError, match="vista"):
+        item_do_form({"nome": "TV", "buscas": "x", "limite_vista": "abc"})
+    assert form_de_item(it)["limite_vista"] == "1200"
+    assert form_de_item({"nome": "TV", "buscas": ["x"]})["limite_vista"] == ""
+
+
+def test_ofertas_recarregam_ao_abrir_a_aba():
+    html = html_cadastro()
+    assert "aba.dataset.aba === 'ofertas'" in html and "carregarOfertas()" in html
+
+
+def test_canal_ntfy_salva_ao_sair_do_campo():
+    assert "e.target.id === 'g-ntfy' && api()" in html_cadastro()
