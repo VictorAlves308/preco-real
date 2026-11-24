@@ -20,6 +20,7 @@ class Item:
     marcas: list[str] = field(default_factory=list)
     exigir: list[str] = field(default_factory=list)
     excluir: list[str] = field(default_factory=list)
+    urls: list[str] = field(default_factory=list)  # buscas extras (tipo busca)
 
 
 @dataclass
@@ -35,8 +36,8 @@ class Config:
 def _ler(path: Path) -> dict:
     if not path.exists():
         return {}
-    with open(path, "rb") as f:
-        return tomllib.load(f)
+    # utf-8-sig: aceita arquivo salvo com BOM (Bloco de Notas / PowerShell no Windows)
+    return tomllib.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def carregar(config_path: Path, segredos_path: Path) -> Config:

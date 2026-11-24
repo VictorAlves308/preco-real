@@ -57,6 +57,7 @@ class Hit:
     parcelas: int | None
     sem_juros: bool
     marketplace: bool
+    loja: str = ""
 
 
 def _sem_juros(parcelas, total) -> bool:
@@ -131,6 +132,7 @@ def parse_busca(estado: dict) -> list[Hit]:
                 parcelas=int(parcelas) if parcelas else None,
                 sem_juros=_sem_juros(parcelas, total),
                 marketplace=bool(h.get("marketplace")),
+                loja=h.get("merchantName") or (h.get("bestOffer") or {}).get("merchantName", ""),
             )
         )
     return out

@@ -52,3 +52,13 @@ def test_fetch_falha_total():
     s = SessaoFake({"www.zoom.com.br": Resp(403), "www.buscape.com.br": Resp(200, "<html>captcha</html>")})
     with pytest.raises(SemDados):
         baixar(URL_CPU, sessao=s)
+
+
+def test_parse_busca_loja():
+    est = {"hits": {"hits": [{"name": "M", "url": "/lead?oid=1", "price": 1, "type": "offer",
+                              "merchantName": "Magazine Luiza", "bestOffer": {"merchantName": "X"}},
+                             {"name": "P", "url": "/p", "price": 1, "type": "product",
+                              "bestOffer": {"merchantName": "KaBuM!"}}]}}
+    hits = parse_busca(est)
+    assert hits[0].loja == "Magazine Luiza"
+    assert hits[1].loja == "KaBuM!"

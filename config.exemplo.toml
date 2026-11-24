@@ -3,6 +3,7 @@
 # Cada [[itens]] é uma coisa que você quer comprar.
 #   nome          nome que aparece no aviso
 #   url           página do Zoom (www.zoom.com.br): de um produto ou de uma busca
+#   urls          buscas extras para o mesmo item (opcional, só tipo "busca")
 #   tipo          "produto" (url de um produto específico) ou "busca" (url de busca/categoria)
 #   modo          "promocao"   = só avisa promoção de verdade (ou oferta sem histórico)
 #                 "mais_barato" = também avisa quando aparece o menor preço já visto
@@ -22,6 +23,12 @@ modo = "mais_barato"
 [[itens]]
 nome = "Monitor 144Hz"
 url = "https://www.zoom.com.br/search?q=monitor%20144hz"
+urls = [
+  "https://www.zoom.com.br/search?q=monitor%20gamer%20144hz%20ips",
+  "https://www.zoom.com.br/search?q=monitor%20aoc%20144hz",
+  "https://www.zoom.com.br/search?q=monitor%20lg%20ultragear%20144hz",
+  "https://www.zoom.com.br/search?q=monitor%20samsung%20odyssey%20144hz",
+]
 tipo = "busca"
 modo = "mais_barato"
 polegadas_min = 23.8
@@ -33,17 +40,7 @@ excluir = ["TN", "Portátil", "Portatil"]
 [[itens]]
 nome = "TV 32-40"
 url = "https://www.zoom.com.br/search?q=smart%20tv%2032"
-tipo = "busca"
-modo = "promocao"
-limite_total = 1500
-polegadas_min = 32
-polegadas_max = 40
-marcas = ["Samsung", "LG", "TCL", "Philips", "AOC"]
-exigir = ["Smart"]
-
-[[itens]]
-nome = "TV 32-40 (40pol)"
-url = "https://www.zoom.com.br/search?q=smart%20tv%2040"
+urls = ["https://www.zoom.com.br/search?q=smart%20tv%2040"]
 tipo = "busca"
 modo = "promocao"
 limite_total = 1500
