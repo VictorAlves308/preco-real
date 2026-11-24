@@ -29,11 +29,26 @@ copy config.exemplo.toml config.toml
 copy segredos.exemplo.toml segredos.toml
 ```
 
+## Cadastro de produtos (tela)
+
+O jeito mais fácil é pela tela de cadastro:
+
+```powershell
+.venv\Scripts\python.exe -m precos --cadastro
+powershell -ExecutionPolicy Bypass -File criar_atalho.ps1   # cria um atalho na área de trabalho
+```
+
+Nela você adiciona, edita e exclui produtos. Não precisa de link: é só escrever o que buscaria numa loja
+(ex.: `ryzen 7 5700x`). Também configura o canal do ntfy, a IA e o tema, e pode mandar verificar na hora.
+Tudo é salvo no `config.toml` e no `segredos.toml`. Na primeira vez que a tela salva, ela guarda o arquivo
+original em `config.toml.bak`.
+
 ## Configuração
 
 ### `config.toml`: o que você quer comprar
 Cada bloco `[[itens]]` é um produto. Os campos estão explicados no próprio arquivo.
 
+- **`buscas = ["termo", ...]`:** o jeito mais simples: termos de busca, como numa loja. Dispensa `url` e `tipo`.
 - **`tipo = "produto"`:** abra o produto no zoom.com.br e cole o endereço da página em `url`.
 - **`tipo = "busca"`:** faça a busca no zoom.com.br e cole o endereço da busca. Para cobrir mais anúncios, coloque buscas extras em `urls`. Depois use os filtros (`marcas`, `polegadas_min`, `hz_min`, `exigir`, `excluir`) para tirar o que não presta.
 - **`modo = "mais_barato"`:** avisa também quando aparece o menor preço já visto.

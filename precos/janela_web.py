@@ -255,7 +255,7 @@ def html_janela(titulo: str, itens: list[dict], verificado: str, tema: str = "si
 
 class _Api:
     def __init__(self):
-        self.janela = None
+        self._janela = None
 
     def abrir(self, link: str) -> None:
         if link.startswith("https://"):
@@ -265,8 +265,8 @@ class _Api:
         salvar_tema(PREF, tema)
 
     def fechar(self) -> None:
-        if self.janela:
-            self.janela.destroy()
+        if self._janela:
+            self._janela.destroy()
 
 
 def mostrar(titulo: str, itens: list[dict], verificado: str, tema_padrao: str = "sistema") -> None:
@@ -275,6 +275,6 @@ def mostrar(titulo: str, itens: list[dict], verificado: str, tema_padrao: str = 
     api = _Api()
     tema = ler_tema(PREF, tema_padrao)
     altura = min(150 + 330 * max(len(itens), 1), 800)
-    api.janela = webview.create_window(titulo, html=html_janela(titulo, itens, verificado, tema), js_api=api,
+    api._janela = webview.create_window(titulo, html=html_janela(titulo, itens, verificado, tema), js_api=api,
                                        width=560, height=altura, min_size=(460, 360), on_top=True)
     webview.start()

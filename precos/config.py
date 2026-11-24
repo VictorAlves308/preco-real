@@ -5,12 +5,18 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
+
+
+def url_busca(termo: str) -> str:
+    """Endereço da busca no Zoom para um termo (ninguém precisa colar link)."""
+    return "https://www.zoom.com.br/search?q=" + quote(termo.strip())
 
 
 @dataclass
 class Item:
     nome: str
-    url: str
+    url: str = ""
     tipo: Literal["produto", "busca"] = "produto"
     modo: Literal["promocao", "mais_barato"] = "promocao"
     limite_total: float | None = None
@@ -24,6 +30,7 @@ class Item:
     ordem: Literal["menor_preco", "parcelas"] = "menor_preco"  # parcelas = 10x+ primeiro
     pesquisa: Literal["nenhuma", "economica", "completa"] = "nenhuma"  # uso de IA
     descricao: str = ""  # o que você quer, em texto livre (usado pela IA)
+    buscas: list[str] = field(default_factory=list)  # termos de busca no Zoom
 
 
 @dataclass
@@ -63,7 +70,12 @@ def carregar(config_path: Path, segredos_path: Path) -> Config:
     for d in dados.get("itens", []):
         if d.get("limite_total") is not None:
             d["limite_total"] = float(d["limite_total"])
-        itens.append(Item(**d))
+        it = Item(**d)
+        if it.buscas and not it.url:
+            it.tipo = "busca"
+            it.url = url_busca(it.buscas[0])
+            it.urls = [url_busca(b) for b in it.buscas[1:]] + it.urls
+        itens.append(it)
     return Config(
         itens=itens,
         ntfy_topico=seg.get("ntfy_topico") or None,

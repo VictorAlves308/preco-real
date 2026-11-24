@@ -59,6 +59,11 @@ def main(argv: list[str]) -> int:
 
 
 def _executar(argv: list[str]) -> int:
+    if "--cadastro" in argv:
+        from .cadastro import abrir
+
+        abrir()
+        return 0
     cfg = carregar(RAIZ / "config.toml", RAIZ / "segredos.toml")
     if "--teste-aviso" in argv:
         o = Oferta("teste", "Produto de teste", "Loja Teste", 999.9, 1099.9, 10, 109.99, True, False,
