@@ -102,3 +102,23 @@ def test_varias_buscas_sem_duplicar(tmp_path):
     ids = [a.oferta.offer_id for a in achados]
     assert len(ids) == 3 and len(set(ids)) == 3
     assert all(a.oferta.loja for a in achados)
+
+
+def test_nao_avisa_mais_caros_nas_rodadas_seguintes(tmp_path):
+    av = Avisar()
+    url = "https://www.zoom.com.br/search?q=monitor%20144hz"
+    item = Item(nome="Monitor", url=url, tipo="busca", modo="mais_barato", polegadas_min=23.8,
+                polegadas_max=27, hz_min=144, marcas=["LG", "Philips", "Gigabyte", "ASUS"])
+    paginas = {url: html_de(estado("zoom_busca_monitor.json"))}
+    assert len(_rodar([item], paginas, tmp_path, av)) == 3
+    assert _rodar([item], paginas, tmp_path, av) == []
+
+
+def test_avisar_todos_informa_resultado(monkeypatch):
+    import precos.rodada as r
+    monkeypatch.setattr(r, "abrir_janela", lambda *a: None)
+    from precos.avisos import Achado
+    from precos.zoom import Oferta
+    o = Oferta("1", "n", "l", 1.0, 1.0, 10, 0.1, True, False, "http://x")
+    res = r.avisar_todos(Config(itens=[]))([Achado("i", o, "real", [])])
+    assert res == {"janela": True, "ntfy": False, "whatsapp": False}

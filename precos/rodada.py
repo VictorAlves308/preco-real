@@ -73,7 +73,12 @@ def _escolher(item: Item, cands, estado: Estado) -> list[Achado]:
     for o, v, tags in sorted(cands, key=lambda c: c[0].total_parcelado):
         if o.offer_id in vistos or v == "maquiada":
             continue
-        if v == "normal" and not (item.modo == "mais_barato" and (menor is None or o.total_parcelado < menor)):
+        # Só "real" passa direto. "sem_historico" e "normal" só avisam se forem mais baratos que
+        # tudo o que já foi visto antes; senão cada rodada avisaria as próximas ofertas, mais caras.
+        mais_barato_que_antes = menor is None or o.total_parcelado < menor
+        if v == "sem_historico" and not mais_barato_que_antes:
+            continue
+        if v == "normal" and not (item.modo == "mais_barato" and mais_barato_que_antes):
             continue
         if estado.ja_avisado(item.nome, o.offer_id, o.total_parcelado):
             continue
@@ -87,15 +92,18 @@ def _escolher(item: Item, cands, estado: Estado) -> list[Achado]:
 
 
 def avisar_todos(cfg: Config):
-    def avisar(achados: list[Achado]) -> None:
+    def avisar(achados: list[Achado]) -> dict[str, bool]:
         titulo, corpo = formatar(achados)
         links = [a.oferta.link for a in achados]
+        res = {"janela": False, "ntfy": False, "whatsapp": False}
         try:
             abrir_janela(titulo, corpo, links)
+            res["janela"] = True
         except Exception as e:  # noqa: BLE001
             log.warning("janela falhou: %s", e)
-        enviar_ntfy(cfg, titulo, corpo, links[0] if links else None)
-        enviar_whatsapp(cfg, f"{titulo}\n\n{corpo}")
+        res["ntfy"] = enviar_ntfy(cfg, titulo, corpo, links[0] if links else None)
+        res["whatsapp"] = enviar_whatsapp(cfg, f"{titulo}\n\n{corpo}")
+        return res
     return avisar
 
 

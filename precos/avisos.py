@@ -66,6 +66,7 @@ def formatar(achados: list[Achado]) -> tuple[str, str]:
 
 def enviar_ntfy(cfg: Config, titulo: str, corpo: str, link: str | None, sessao=None) -> bool:
     if not cfg.ntfy_topico:
+        log.info("ntfy: nenhum tópico em segredos.toml, aviso no celular desligado")
         return False
     payload = {"topic": cfg.ntfy_topico, "title": titulo, "message": corpo, "tags": ["moneybag"]}
     if link:
